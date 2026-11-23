@@ -4,6 +4,7 @@ import { RootProvider } from 'fumadocs-ui/provider/next';
 import './styles.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://prex.djl.foundation"),
   title: { default: 'Prex — Previews Extended', template: '%s | Prex' },
   description: 'Lokale Dev-Server mit freien Ports starten.',
 };

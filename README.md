@@ -41,3 +41,16 @@ prex stop-all
 ```
 
 Each reserved port has a local URL. With `-t` or `--tailscale`, Prex also opens a private Tailscale Serve TCP forwarder and reports the Tailnet URL. Use `--json` for structured output. See the [session guide](docs/site/content/docs/sessions.mdx) for command details.
+
+## Agent Skill
+
+After the docs site goes live, install the Prex Agent Skill in a project, or add `--global` to install it for your user.
+
+```sh
+npx skills add https://prex.djl.foundation --skill prex
+npx skills add https://prex.djl.foundation --skill prex --global
+```
+
+See the [skill source](skills/prex/SKILL.md) and the [docs hosting guide](docs/deployment.md).
+
+With access to the GitHub repo, use `npx skills add JackatDJL/prex --skill prex` or run `npx skills add . --skill prex` from this checkout.
