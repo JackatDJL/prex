@@ -18,6 +18,10 @@ cp package-lock.json "$PREX_STAGE/"
 npm ci --prefix "$PREX_STAGE" --omit=dev --ignore-scripts --no-audit --no-fund
 rm -f "$PREX_STAGE/package-lock.json" "$PREX_STAGE/node_modules/.package-lock.json"
 
+# nFPM does not expand environment variables in content paths.
+sed -e 's|${PREX_STAGE}|'"$PREX_STAGE"'|g' -e 's|${PREX_VERSION}|'"$PREX_VERSION"'|g' \
+  packaging/nfpm.yaml > "$work/nfpm.yaml"
+
 for format in deb rpm archlinux; do
-  nfpm package --config packaging/nfpm.yaml --packager "$format" --target "$output/"
+  nfpm package --config "$work/nfpm.yaml" --packager "$format" --target "$output/"
 done
