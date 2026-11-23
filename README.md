@@ -5,11 +5,16 @@
 Prex (Previews Extended) reserves local TCP ports and starts a development command with those ports in its environment.
 
 ```sh
-npm ci
-npm pack
-npm install -g ./jkxrx-prex-0.1.0.tgz
+npm install -g @jkxrx/prex
 prex bun run dev
 prex run --ports 2 -- ./dev-stack
+```
+
+To work on the source checkout, install its dependencies and build the CLI:
+
+```sh
+npm ci
+npm run build
 ```
 
 The short form passes the program and its arguments through as-is. Use `prex run -- <program> [arguments…]` when the command name conflicts with a Prex option or reserved subcommand. `--ports` accepts 1 to 5; integrations can choose the default when it is omitted. `--profile` selects an integration profile.
