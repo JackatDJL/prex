@@ -1,0 +1,29 @@
+---
+title: Just
+description: Verwende vorhandene Prex-Scripts als Just-Rezepte.
+---
+
+Füge deinem Justfile im Projektroot zwei Rezepte hinzu. So bleiben Befehl und Port-Zuordnung in [config/prex.toml](/docs/configuration/).
+
+```makefile
+signalling:
+    @prex signalling
+
+web:
+    @prex web
+
+alias signal := signalling
+```
+
+```sh
+just signalling
+just web
+
+# Beide gleichzeitig in derselben Shell starten
+just signalling &
+just web
+```
+
+Ein Just-Alias verweist auf ein Rezept. Ein Rezept wie oben passt auch dann, wenn du später zusätzliche Just-Schritte brauchst. `prex` muss auf dem PATH liegen.
+
+Syntax für weitere Rezepte und Aliasse findest du im [Just-Handbuch](https://just.systems/man/en/).

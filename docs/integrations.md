@@ -1,0 +1,17 @@
+# Integrationen
+
+`prepareRun` bestimmt die Portanzahl und bereitet profilspezifische Laufzeitdateien vor. Die CLI reserviert die Ports und führt den Befehl mit `{ ...process.env, ...run.environment(ports) }` aus. Sie ruft `dispose()` nach dem Kindprozess auf.
+
+## Portfolio mit Laravel und Vite
+
+Das Profil `portfolio` reserviert zwei unabhängige Ports in der Reihenfolge `app`, `vite`. Der App-Port wird als `PORT`, `PREX_PORT`, `SERVER_PORT` und `PREX_PORT_APP` ausgegeben. Der Vite-Port wird als `PREX_PORT_2`, `PREX_PORT_VITE` und `HOMEPAGE_PREVIEW_VITE_PORT` ausgegeben. Beide Server binden an `127.0.0.1`.
+
+Kopiere den Beispiel-Runner `examples/portfolio-runner.mjs` in das Portfolio-Projekt, etwa nach `scripts/prex-portfolio-runner.mjs`, und starte ihn so:
+
+```sh
+prex run --profile portfolio -- node scripts/prex-portfolio-runner.mjs
+```
+
+Im Portfolio-Projekt muss `vite.config.js` `HOMEPAGE_PREVIEW_VITE_PORT`, `HOMEPAGE_PREVIEW_HOST`, `HOMEPAGE_PREVIEW_HOT_FILE` und `HOMEPAGE_PREVIEW_ENV_DIR` verwenden. Setze damit `server.port`, `server.host`, `server.strictPort: true`, `envDir` und die Laravel-Vite-Plugin-Hot-Datei. Der Hot-Dateipfad und das leere Vite-Env-Verzeichnis sind pro Aufruf neu. Dadurch können zwei Worktrees parallel laufen, ohne dieselbe Laravel-Hot-Datei zu beschreiben oder Projekt-Env-Dateien in Vite zu laden. Der Runner nutzt `bun run --no-env-file` zusätzlich zum leeren `envDir`.
+
+Die Startkette ist bewusst explizit: Vite startet zuerst und muss unter `/@vite/client` antworten, bevor Laravel startet. Danach prüft der Runner Laravel unter `/up`. Ein Fehler oder vorzeitiges Ende eines Prozesses beendet den anderen Prozess ebenfalls. Das Profil setzt die Variablen; die Projektkonfiguration muss sie tatsächlich übernehmen. Ein anderes Laravel-Readiness-Endpoint kann im Runner angepasst werden.

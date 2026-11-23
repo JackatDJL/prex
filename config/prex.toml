@@ -1,0 +1,5 @@
+version = 1
+
+[scripts.docs]
+ports = ["web"]
+command = ["npm", "--prefix", "docs/site", "run", "dev", "--", "--hostname", "{{host}}", "--port", "{{port.web}}"]

@@ -1,0 +1,41 @@
+---
+title: Konfiguration
+description: Lege den globalen Portbereich und benannte Kommandos für einzelne Projekte fest.
+---
+
+## Globaler Portbereich
+
+Prex liest `$XDG_CONFIG_HOME/prex/config.json` und verwendet bei fehlendem `XDG_CONFIG_HOME` den Pfad `~/.config/prex/config.json`. Der Standardbereich ist 41000–41999 inklusive.
+
+```json
+{
+  "version": 1,
+  "ports": { "min": 41000, "max": 41999 }
+}
+```
+
+## Projekt-Scripts
+
+Lege `config/prex.toml` im Projektroot an. Prex nimmt die nächstgelegene Konfiguration oberhalb des aktuellen Arbeitsverzeichnisses und führt das benannte Script im zugehörigen Projektroot aus.
+
+```toml
+version = 1
+
+[scripts.signalling]
+ports = ["signalling"]
+command = ["bun", "run", "signalling"]
+env = { SIGNALING_URL = "ws://{{host}}:{{port.signalling}}" }
+
+[scripts.web]
+ports = ["web"]
+command = ["bun", "run", "dev", "--port", "{{port.web}}"]
+
+[scripts.check]
+command = ["bun", "run", "check"]
+```
+
+Starte die Scripts mit `prex signalling`, `prex web` oder `prex check`. Zusätzliche Argumente werden angehängt. `prex run -- web` ruft ausdrücklich ein externes Programm namens `web` auf.
+
+`ports` enthält bis zu fünf eindeutige Rollen. Prex setzt `{{port.rolle}}` im Befehlsarray und in den String-Werten von `env` ein. `{{host}}` steht für `127.0.0.1`. Jede Rolle wird auch als Variable wie `PREX_PORT_SIGNALLING` übergeben. Ein Script ohne Rollen reserviert keine Ports. Das Signalling-Script muss die URL auswerten, damit es am zugewiesenen Port lauscht.
+
+Einzelne `prex`-Aufrufe haben eigene Reservierungen und Prozessumgebungen. Wenn auch der Webprozess die Signalling-URL braucht, definiere beide Rollen in **einem** Script und übergib beide Werte an einen gemeinsamen Startbefehl. Für eine Anwendung mit gemeinsam genutzten Laufzeitdateien siehe das [Portfolio-Profil](/docs/portfolio/).

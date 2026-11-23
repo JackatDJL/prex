@@ -1,0 +1,85 @@
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { parse } from "smol-toml";
+
+const host = "127.0.0.1";
+const rolePattern = /^[a-z][a-z0-9_]*$/;
+const variablePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function table(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function strings(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+export async function findProjectScript(cwd: string, name: string) {
+  for (let root = resolve(cwd); ; root = dirname(root)) {
+    const path = join(root, "config", "prex.toml");
+    const source = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (source !== undefined) {
+      try {
+        const config = parse(source);
+        if (config.version !== 1) throw new Error("version muss 1 sein.");
+        const scripts = table(config.scripts);
+        if (!scripts) throw new Error("[scripts] fehlt oder ist keine Tabelle.");
+        if (!Object.hasOwn(scripts, name)) return undefined;
+        return decodeScript(root, scripts[name]);
+      } catch (error) {
+        throw new Error(`${path} (Script ${name}): ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (dirname(root) === root) return undefined;
+  }
+}
+
+function decodeScript(cwd: string, value: unknown) {
+  const entry = table(value);
+  if (!entry) throw new Error("Script muss eine TOML-Tabelle sein.");
+  const { command, ports = [], env = {} } = entry;
+  if (!strings(command) || !command[0]) throw new Error("command braucht ein nichtleeres Programm und String-Argumente.");
+  if (!strings(ports) || ports.length > 5 || new Set(ports).size !== ports.length || !ports.every((role) => rolePattern.test(role))) {
+    throw new Error("ports erwartet bis zu fünf eindeutige Rollen aus Kleinbuchstaben, Zahlen und Unterstrichen.");
+  }
+  const environment = table(env);
+  if (!environment || Object.entries(environment).some(([key, value]) =>
+    !variablePattern.test(key) || key.startsWith("PREX_") || typeof value !== "string"
+  )) {
+    throw new Error("env erwartet String-Werte und gültige Variablennamen außerhalb von PREX_*.");
+  }
+
+  const roles = ports;
+
+  function render(template: string, assignedPorts?: readonly number[]): string {
+    return template.replace(/\{\{([^{}]*)\}\}/g, (_match, key: string) => {
+      if (key === "host") return host;
+      const index = key.startsWith("port.") ? roles.indexOf(key.slice(5)) : -1;
+      if (index < 0) throw new Error(`Unbekannter Platzhalter {{${key}}}.`);
+      return String(assignedPorts?.[index] ?? 0);
+    });
+  }
+
+  for (const template of [...command, ...Object.values(environment) as string[]]) render(template);
+  return {
+    cwd,
+    count: ports.length,
+    expand(assignedPorts: readonly number[], extraArgs: readonly string[]) {
+      const overrides: NodeJS.ProcessEnv = Object.fromEntries(
+        Object.entries(environment).map(([key, template]) => [key, render(template as string, assignedPorts)]),
+      );
+      for (const [index, role] of ports.entries()) {
+        overrides[`PREX_PORT_${role.toUpperCase()}`] = String(assignedPorts[index]);
+      }
+      return {
+        command: [...command.map((arg) => render(arg, assignedPorts)), ...extraArgs],
+        environment: overrides,
+      };
+    },
+  };
+}

@@ -1,0 +1,43 @@
+---
+title: Sessions und Freigabe
+description: Starte Previews im Vordergrund oder Hintergrund und teile ihre Adressen.
+---
+
+## Im Vordergrund und im Hintergrund
+
+```sh
+prex run -- bun run dev
+prex start --name frontend -- bun run dev
+prex start web
+prex list
+prex status frontend --json
+prex stop frontend
+prex stop-all
+```
+
+`run` bleibt im Vordergrund und beendet den gestarteten Befehl bei einem Signal wie Strg+C. `start` läuft im Hintergrund weiter. Es wartet bis zu 30 Sekunden, bis alle reservierten Ports auf Loopback TCP-Verbindungen annehmen, und gibt dann die Session-ID, URLs und den privaten Pfad zur Logdatei aus. Benannte Projekt-Scripts wie `web` funktionieren auch mit `start`. Wenn mehrere Sessions denselben Namen haben, verwende die ID aus `prex list`.
+
+`--json` liefert ein JSON-Dokument auf stdout. Im Vordergrund schreibt der Kindprozess seine Ausgaben bei `--json` nach stderr. Im Hintergrund stehen sie in der Logdatei. `list` und `stop-all` liefern Arrays. Die ausgegebenen URLs verwenden HTTP und setzen voraus, dass dein Server HTTP spricht. Ein TCP-Port kann auch für andere Protokolle verwendet werden.
+
+## Im Tailnet öffnen
+
+```sh
+prex start -t --name web -- bun run dev
+prex run --tailscale -- bun run dev
+```
+
+Prex gibt pro Port die Loopback-URL und eine Tailnet-URL wie `http://rechner.example.ts.net:41408` aus. Dafür braucht es ein verbundenes Tailscale mit Berechtigung für Serve. Prex startet einen privaten TCP-Forwarder pro Port und beendet ihn mit der Session. Die Tailnet-Zugriffsregeln bestimmen, wer die URL öffnen darf.
+
+## QR-Codes
+
+```sh
+prex start --QR web
+prex qr web
+prex qr https://example.com
+prex qri web
+prex qr --image web --json
+```
+
+`-qr`, `--qr` und `--QR` zeigen beim Start den QR-Code für die erste URL an. `prex qr` und `prex qri` akzeptieren eine Session-ID, einen Namen oder eine HTTP(S)-URL. Bei einer Session bevorzugt der QR-Code die Tailnet-URL. Für weitere Ports kannst du eine konkrete URL aus `status` übergeben.
+
+`qri`, `qr -i` und `qr --image` schreiben eine PNG-Datei in ein eigenes Verzeichnis unter dem temporären Systempfad. Der ausgegebene absolute Pfad lässt sich in einer Chatantwort als Bild einbetten. Mit `--json` steht er im Feld `image`.

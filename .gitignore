@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tgz
+docs/site/.next/
+docs/site/.source/
+docs/site/out/
+docs/site/next-env.d.ts
+docs/site/*.tsbuildinfo

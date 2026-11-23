@@ -1,0 +1,19 @@
+---
+title: Erste Schritte
+description: Starte einen bestehenden Dev-Befehl mit einem freien lokalen TCP-Port.
+---
+
+Prex benötigt Node.js ab Version 22. Die erste Version ist für Linux und macOS vorgesehen. Solange das npm-Paket noch unveröffentlicht ist, lässt es sich aus dem Checkout bauen und installieren.
+
+```sh
+npm ci
+npm pack
+npm install -g ./jackatdjl-prex-0.1.0.tgz
+```
+
+```sh
+prex bun run dev
+prex run --ports 2 -- ./dev-stack
+```
+
+Der erste Port steht als `PORT`, `PREX_PORT` und `PREX_PORT_1` bereit. Weitere Ports erhalten fortlaufende Nummern. Next.js verwendet `PORT` als Vorgabe. Wenn dein Server ein Argument wie `--port` erwartet, definiere ein [Projekt-Script](/docs/configuration/).
