@@ -9,6 +9,15 @@ The first release is already versioned at 0.1.0. Publish that version without a 
 
 ## Trusted Publishing
 
-The initial 0.1.0 publish uses an npm token and a current two-factor code to create the package. Then open its npm settings and add a GitHub Actions trusted publisher for **JackatDJL / prex**, workflow filename **publish.yml**, with **Allow npm publish** enabled. Leave the environment field blank. The workflow file lives at `.github/workflows/publish.yml`.
+The initial 0.1.0 publish uses npm's passkey flow to create the package:
+
+```sh
+npm login --auth-type=web
+npm whoami
+npm publish ./jkxrx-prex-0.1.0.tgz --access public
+npm view @jkxrx/prex@0.1.0 version
+```
+
+If npm challenges the publish, complete its security-key prompt in the browser; a TOTP is not required. Then open the package settings and add a GitHub Actions trusted publisher for **JackatDJL / prex**, workflow filename **publish.yml**, with **Allow npm publish** enabled. Leave the environment field blank. The workflow file lives at `.github/workflows/publish.yml`.
 
 Do not rerun the npm job while `package.json` still says `0.1.0`; npm rejects a version that is already published. Configure trusted publishing when the next real Changesets release is ready, then complete its first successful OIDC publish within two days. The GitHub workflow uses OIDC and has no npm token secret. npm does not generate provenance attestations for packages published from this private GitHub repository, even with OIDC.
