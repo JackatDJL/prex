@@ -13,7 +13,7 @@ output="${1:-.artifacts/linux}"
 mkdir -p "$PREX_STAGE" "$output"
 
 npm pack --pack-destination "$work" >/dev/null
-tar -xzf "$work/jackatdjl-prex-$PREX_VERSION.tgz" -C "$PREX_STAGE" --strip-components=1
+tar -xzf "$work/"*.tgz -C "$PREX_STAGE" --strip-components=1
 cp package-lock.json "$PREX_STAGE/"
 npm ci --prefix "$PREX_STAGE" --omit=dev --ignore-scripts --no-audit --no-fund
 rm -f "$PREX_STAGE/package-lock.json" "$PREX_STAGE/node_modules/.package-lock.json"

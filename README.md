@@ -7,7 +7,7 @@ Prex (Previews Extended) reserves local TCP ports and starts a development comma
 ```sh
 npm ci
 npm pack
-npm install -g ./jackatdjl-prex-0.1.0.tgz
+npm install -g ./jkxrx-prex-0.1.0.tgz
 prex bun run dev
 prex run --ports 2 -- ./dev-stack
 ```

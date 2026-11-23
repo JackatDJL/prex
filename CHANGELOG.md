@@ -1,4 +1,4 @@
-# @jackatdjl/prex
+# @jkxrx/prex
 
 ## 0.1.0
 
