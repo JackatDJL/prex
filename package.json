@@ -27,7 +27,8 @@
     "prepack": "npm run build",
     "changeset": "changeset",
     "version:packages": "changeset version && npm install --package-lock-only",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "package:linux": "bash packaging/build-linux.sh"
   },
   "dependencies": {
     "effect": "^4.1.5",
@@ -43,5 +44,9 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JackatDJL/prex.git"
   }
 }

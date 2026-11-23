@@ -8,3 +8,5 @@ docs/site/next-env.d.ts
 docs/site/*.tsbuildinfo
 
 docs/site/public/.well-known/agent-skills/
+
+.artifacts/

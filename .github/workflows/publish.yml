@@ -1,0 +1,52 @@
+name: Publish Prex
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: Publish this version to npm via OIDC
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.45.1
+      - run: npm run package:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prex-linux
+          path: .artifacts/linux/
+          if-no-files-found: error
+          include-hidden-files: true
+
+  npm:
+    if: github.ref == 'refs/heads/main' && inputs.publish_npm
+    needs: linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global npm@11.21.3
+      - run: npm ci
+      - run: npm publish --access public

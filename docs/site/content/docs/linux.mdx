@@ -1,0 +1,26 @@
+---
+title: Linux-Pakete
+description: Installiere Prex mit apt, dnf oder pacman aus einer lokalen Paketdatei.
+---
+
+Der GitHub-Actions-Workflow **Publish Prex** baut die drei Pakete aus derselben Version wie das npm-Paket. Lade das Artefakt `prex-linux` herunter und entpacke es. Der Download erfordert Zugriff auf das private GitHub-Repo. Alternativ kannst du die Pakete aus einem Checkout mit Node.js ab 22 und installiertem nFPM selbst bauen.
+
+```sh
+npm ci
+npm run package:linux
+```
+
+Die Dateien liegen dann unter `.artifacts/linux/`. Wechsle in das Verzeichnis mit den ausgepackten Dateien und verwende den Befehl für deine Distribution.
+
+```sh
+# Debian / Ubuntu
+sudo apt install ./prex_*.deb
+
+# Fedora
+sudo dnf install ./prex-*.rpm
+
+# Arch Linux
+sudo pacman -U ./prex-*.pkg.tar.zst
+```
+
+Die Pakete deklarieren Node.js ab 22 als Abhängigkeit. Dein Paketmanager benötigt eine Paketquelle mit dieser Node-Version. Prex ist danach als `prex` im PATH verfügbar. Für automatische Updates über das System wären zusätzlich signierte Paketquellen nötig.

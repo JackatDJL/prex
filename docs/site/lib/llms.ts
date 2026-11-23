@@ -4,6 +4,7 @@ import { join } from 'node:path';
 const base = 'https://prex.djl.foundation';
 const pages = [
   { slug: 'index', path: '/docs/', title: 'Erste Schritte' },
+  { slug: 'linux', path: '/docs/linux/', title: 'Linux-Pakete' },
   { slug: 'sessions', path: '/docs/sessions/', title: 'Sessions und Freigabe' },
   { slug: 'configuration', path: '/docs/configuration/', title: 'Konfiguration' },
   { slug: 'just', path: '/docs/just/', title: 'Just' },

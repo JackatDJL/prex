@@ -54,3 +54,7 @@ npx skills add https://prex.djl.foundation --skill prex --global
 See the [skill source](skills/prex/SKILL.md) and the [docs hosting guide](docs/deployment.md).
 
 With access to the GitHub repo, use `npx skills add JackatDJL/prex --skill prex` or run `npx skills add . --skill prex` from this checkout.
+
+## Linux packages
+
+The **Publish Prex** GitHub Actions workflow builds `.deb`, `.rpm`, and `.pkg.tar.zst` packages from the same version as npm. Download the `prex-linux` artifact, extract it and follow the [Linux installation guide](docs/site/content/docs/linux.mdx).
