@@ -62,4 +62,4 @@ With access to the GitHub repo, use `npx skills add JackatDJL/prex --skill prex`
 
 ## Linux packages
 
-The **Publish Prex** GitHub Actions workflow builds `.deb`, `.rpm`, and `.pkg.tar.zst` packages from the same version as npm. Download the `prex-linux` artifact, extract it and follow the [Linux installation guide](docs/site/content/docs/linux.mdx).
+The **Publish Prex** GitHub Actions workflow builds `.deb`, `.rpm`, and `.pkg.tar.zst` packages from the same version as npm. It currently stores them as a GitHub Actions artifact in this private repository, so the files are available to maintainers with repository access. Public installs use npm for now. See the [Linux installation guide](docs/site/content/docs/linux.mdx).
