@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S bun --no-env-file
 /**
  * Prex
  *
@@ -14,11 +14,12 @@
  * (at your option) any later version.
  */
 
+import { Cause, Effect, Exit } from "effect";
+import { FetchHttpClient } from "effect/http";
+import { BunServices } from "@effect/platform-bun";
+import { asError, attempt, task } from "./failure.js";
 import { compiled, upgrade } from "./upgrade.js";
-import { spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
 import { createConnection } from "node:net";
-import { setTimeout as delay } from "node:timers/promises";
 import { constants as osConstants } from "node:os";
 import { fileURLToPath } from "node:url";
 import { prepareRun } from "./integrations.js";
@@ -138,139 +139,144 @@ function signalExitCode(signal: NodeJS.Signals): number {
   return 128 + (osConstants.signals[signal] ?? 0);
 }
 
-async function waitForPorts(ports: readonly number[], signal: AbortSignal) {
-  const deadline = Date.now() + 30_000;
-  let pending = [...ports];
-  while (pending.length && Date.now() < deadline) {
-    signal.throwIfAborted();
-    pending = (await Promise.all(pending.map((port) => new Promise<number | undefined>((resolve) => {
-      const socket = createConnection({ host: "127.0.0.1", port });
-      socket.setTimeout(300, () => socket.destroy());
-      socket.once("connect", () => { resolve(undefined); socket.destroy(); });
-      socket.once("error", () => resolve(port));
-      socket.once("close", () => resolve(port));
-    })))).filter((port): port is number => port !== undefined);
-    if (pending.length) await delay(100, undefined, { signal });
-  }
-  if (pending.length) throw new Error(`Server lauscht noch nicht auf: ${pending.join(", ")}.`);
+function waitForPorts(ports: readonly number[]) {
+  return Effect.gen(function* () {
+    let pending = [...ports];
+    while (pending.length) {
+      const results = yield* Effect.forEach(pending, (port) => Effect.callback<boolean>((resume) => {
+        const socket = createConnection({ host: "127.0.0.1", port });
+        socket.setTimeout(300, () => socket.destroy());
+        socket.once("connect", () => {
+          resume(Effect.succeed(true));
+          socket.destroy();
+        });
+        socket.once("error", () => resume(Effect.succeed(false)));
+        socket.once("close", () => resume(Effect.succeed(false)));
+        return Effect.sync(() => { socket.destroy(); });
+      }), { concurrency: "unbounded" });
+      pending = pending.filter((_, index) => !results[index]);
+      if (pending.length) yield* Effect.sleep(100);
+    }
+  }).pipe(
+    Effect.timeoutOrElse({ duration: "30 seconds", orElse: () =>
+      Effect.fail(new Error(`Server lauscht noch nicht auf: ${ports.join(", ")}.`)) }),
+  );
 }
 
-async function run(
+function termination(background?: AbortSignal) {
+  return Effect.callback<NodeJS.Signals>((resume) => {
+    const handlers = (["SIGINT", "SIGTERM", "SIGHUP"] as const).map((signal) => {
+      const onSignal = () => finish(signal);
+      process.on(signal, onSignal);
+      return [signal, onSignal] as const;
+    });
+    const onStop = () => finish("SIGTERM");
+    const cleanup = () => {
+      for (const [signal, handler] of handlers) process.off(signal, handler);
+      background?.removeEventListener("abort", onStop);
+    };
+    const finish = (signal: NodeJS.Signals) => {
+      cleanup();
+      resume(Effect.succeed(signal));
+    };
+    background?.addEventListener("abort", onStop, { once: true });
+    if (background?.aborted) onStop();
+    return Effect.sync(cleanup);
+  });
+}
+
+const run = Effect.fn("run")(function* (
   options: CliOptions,
   named: boolean,
-  background?: { signal: AbortSignal; ready: (urls: Endpoint[], cwd: string) => Promise<void> },
-): Promise<number> {
-  const { command, profile, count } = options;
-  const script = named && !profile && !options.external && /^[a-zA-Z0-9_-]+$/.test(command[0])
-    ? await findProjectScript(process.cwd(), command[0])
-    : undefined;
-  if (script && count !== undefined && count !== script.count) throw new Error("Das Projekt-Script legt seine Portanzahl fest.");
-  const cwd = script?.cwd ?? process.cwd();
-  const prepared = script?.count === 0 ? undefined : await prepareRun({
-    cwd, profile, count: script?.count ?? count, command,
-  });
-  const controller = new AbortController();
-  const signal = background ? AbortSignal.any([background.signal, controller.signal]) : controller.signal;
+  background?: { signal: AbortSignal; ready: (urls: Endpoint[], cwd: string) => Effect.Effect<void, Error> },
+) {
   let exitSignal: NodeJS.Signals = "SIGTERM";
-  const handlers = (["SIGINT", "SIGTERM", "SIGHUP"] as const).map((kind) => {
-    const handler = () => { exitSignal = kind; controller.abort(); };
-    process.on(kind, handler);
-    return [kind, handler] as const;
-  });
-  let reservation: Awaited<ReturnType<typeof reservePorts>> | undefined;
-  let tailnet: Awaited<ReturnType<typeof serveTailnet>> | undefined;
-  try {
-    if (prepared) reservation = await reservePorts(prepared.count);
+  const lifecycle = Effect.gen(function* () {
+    const { command, profile, count } = options;
+    const script = named && !profile && !options.external && /^[a-zA-Z0-9_-]+$/.test(command[0])
+      ? yield* findProjectScript(process.cwd(), command[0])
+      : undefined;
+    if (script && count !== undefined && count !== script.count) {
+      return yield* Effect.fail(new Error("Das Projekt-Script legt seine Portanzahl fest."));
+    }
+    const cwd = script?.cwd ?? process.cwd();
+    const prepared = script?.count === 0 ? undefined : yield* prepareRun({
+      cwd, profile, count: script?.count ?? count, command,
+    });
+    const reservation = prepared ? yield* reservePorts(prepared.count) : undefined;
     const ports = reservation?.ports ?? [];
     if (!ports.length && (options.tailscale || options.qr || options.image)) {
-      throw new Error("Diese Option benötigt mindestens einen Port.");
+      return yield* Effect.fail(new Error("Diese Option benötigt mindestens einen Port."));
     }
-    if (options.tailscale) tailnet = await serveTailnet(ports, signal);
+    const tailnet = options.tailscale ? yield* serveTailnet(ports) : undefined;
     const urls = endpoints(ports, tailnet?.host);
     const expanded = script?.expand(ports, command.slice(1));
     const childCommand = expanded?.command ?? prepared?.command ?? command;
     const env = { ...process.env, ...prepared?.environment(ports), ...expanded?.environment };
+    if (reservation) yield* reservation.releaseProbes;
 
-    await reservation?.releaseProbes();
-    signal.throwIfAborted();
     const ownGroup = Boolean(background) || !process.stdin.isTTY;
-    const child = spawn(childCommand[0], childCommand.slice(1), {
-      cwd, env, detached: ownGroup,
-      stdio: options.json && !background ? ["inherit", 2, 2] : "inherit",
-    });
-    let killTimer: NodeJS.Timeout | undefined;
-    const send = (kind: NodeJS.Signals) => {
-      if (child.pid === undefined) return;
+    const spawnOptions = {
+      cwd, env, detached: ownGroup, stdin: "inherit",
+      stdout: options.json && !background ? 2 : "inherit",
+      stderr: "inherit",
+    } as const;
+    const child = yield* Effect.acquireRelease(attempt(() => {
       try {
-        if (ownGroup) process.kill(-child.pid, kind);
-        else child.kill(kind);
+        return Bun.spawn([...childCommand], spawnOptions);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        if ((error as NodeJS.ErrnoException).code !== "ENOEXEC") throw error;
+        const [program, ...args] = childCommand;
+        const scriptPath = program.includes("/") ? program : Bun.which(program, { cwd, PATH: env.PATH }) ?? program;
+        return Bun.spawn(["/bin/sh", scriptPath, ...args], spawnOptions);
       }
-    };
-    const stop = () => {
-      send(exitSignal);
-      killTimer ??= setTimeout(() => send("SIGKILL"), 3000);
-    };
-    signal.addEventListener("abort", stop, { once: true });
-    const result = new Promise<number>((resolve, reject) => {
-      child.once("error", reject);
-      child.once("close", (code, kind) => resolve(code ?? (kind ? signalExitCode(kind) : 1)));
-    });
-    const spawned = new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    });
-    const publishing = async () => {
-      await spawned;
-      if (background) {
-        await waitForPorts(ports, signal);
-        signal.throwIfAborted();
-        await background.ready(urls, cwd);
-      } else {
-        if (!options.json) printUrls(urls, true);
-        const qr = options.qr || options.image ? await renderQr(preferredUrl(urls), Boolean(options.image)) : undefined;
-        if (options.json) process.stdout.write(JSON.stringify({ urls, ...qr }) + "\n");
-        else if (qr) printQr(qr, process.stderr);
+    }), (child) => Effect.gen(function* () {
+      const send = (signal: NodeJS.Signals) => {
+        if (!ownGroup) {
+          if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+          return;
+        }
+        try {
+          process.kill(-child.pid, signal);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        }
+      };
+      if (child.exitCode === null && child.signalCode === null) {
+        yield* Effect.sync(() => send(exitSignal));
+        yield* task(() => child.exited).pipe(
+          Effect.timeoutOption("3 seconds"), Effect.interruptible, Effect.ignore,
+        );
       }
-    };
-    const gateway = tailnet;
-    const setup = publishing();
-    try {
-      const first = await Promise.race([
-        setup.then(() => undefined),
-        result.then((code) => {
-          if (background) throw new Error(`Startbefehl vorzeitig beendet (${code}).`);
-          return code;
-        }),
-      ]);
-      if (first !== undefined) return first;
-      return await (gateway ? Promise.race([
-        result,
-        gateway.closed.then(() => { throw new Error("Tailscale Serve wurde beendet."); }),
-      ]) : result);
-    } finally {
-      controller.abort();
-      await Promise.allSettled([result, setup]);
-      clearTimeout(killTimer);
-      if (ownGroup) send("SIGKILL");
+      yield* Effect.sync(() => send("SIGKILL"));
+      yield* Effect.promise(() => child.exited);
+    }));
+    const result = task(() => child.exited).pipe(Effect.map((code) => {
+      const signal = child.signalCode;
+      return typeof signal === "string" ? signalExitCode(signal) : typeof signal === "number" ? 128 + signal : code;
+    }));
+
+    if (background) {
+      yield* Effect.raceFirst(
+        waitForPorts(ports).pipe(Effect.andThen(background.ready(urls, cwd))),
+        result.pipe(Effect.flatMap((code) => Effect.fail(new Error(`Startbefehl vorzeitig beendet (${code}).`)))),
+      );
+    } else {
+      if (!options.json) printUrls(urls, true);
+      const qr = options.qr || options.image ? yield* renderQr(preferredUrl(urls), Boolean(options.image)) : undefined;
+      if (options.json) process.stdout.write(JSON.stringify({ urls, ...qr }) + "\n");
+      else if (qr) printQr(qr, process.stderr);
     }
-  } catch (error) {
-    if (background?.signal.aborted || (controller.signal.aborted && error instanceof Error && error.name === "AbortError")) {
-      return signalExitCode(exitSignal);
-    }
-    throw error;
-  } finally {
-    for (const [kind, handler] of handlers) process.off(kind, handler);
-    try {
-      await tailnet?.dispose();
-    } finally {
-      const cleanup = await Promise.allSettled([reservation?.release(), prepared?.dispose()]);
-      const failed = cleanup.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") throw failed.reason;
-    }
-  }
-}
+    return yield* tailnet ? Effect.raceFirst(result, tailnet.closed) : result;
+  });
+
+  return yield* Effect.raceFirst(Effect.scoped(lifecycle), termination(background?.signal).pipe(
+    Effect.map((signal) => {
+      exitSignal = signal;
+      return signalExitCode(signal);
+    }),
+  ));
+});
 
 function printUrls(urls: Endpoint[], foreground = false) {
   const output = foreground ? process.stderr : process.stdout;
@@ -296,73 +302,75 @@ function printSessions(sessions: Session[], json: boolean, plural: boolean) {
   }
 }
 
-async function manage(action: string, args: readonly string[]): Promise<number> {
+const manage = Effect.fn("manage")(function* (action: string, args: readonly string[]) {
   const json = args.includes("--json");
   const image = action === "qri" || args.includes("-i") || args.includes("--image");
   const qr = action.toLowerCase() === "qr" || action === "qri";
   const selectors = args.filter((arg) => arg !== "--json" && !(qr && (arg === "-i" || arg === "--image")));
   const bulk = action === "list" || action === "stop-all";
   if (selectors.some((arg) => arg.startsWith("-")) || selectors.length > (bulk ? 0 : 1)) {
-    throw new Error(`Ungültige Argumente für 'prex ${action}'.`);
+    return yield* Effect.fail(new Error(`Ungültige Argumente für 'prex ${action}'.`));
   }
   const target = selectors[0];
   if (qr) {
-    const url = /^https?:\/\/[^\s]+$/i.test(target ?? "")
-      ? new URL(target).href
-      : preferredUrl(selectSession(await listSessions(), target).urls);
-    const result = await renderQr(url, image);
+    const direct = /^https?:\/\/[^\s]+$/i.test(target ?? "")
+      ? yield* attempt(() => new URL(target).href)
+      : undefined;
+    const all = direct ? [] : yield* listSessions();
+    const url = direct ?? (yield* attempt(() => preferredUrl(selectSession(all, target).urls)));
+    const result = yield* renderQr(url, image);
     if (json) process.stdout.write(JSON.stringify(result) + "\n");
     else printQr(result, process.stdout);
     return 0;
   }
-  const all = await listSessions();
-  const sessions = bulk ? all : [selectSession(all, target)];
+  const all = yield* listSessions();
+  const sessions = bulk ? all : [yield* attempt(() => selectSession(all, target))];
   if (action === "stop" || action === "stop-all") {
-    const settled = await Promise.allSettled(sessions.map(stopSession));
-    const stopped = sessions.filter((_, index) => settled[index].status === "fulfilled");
+    const settled = yield* Effect.forEach(sessions, (session) => Effect.exit(stopSession(session)), { concurrency: "unbounded" });
+    const stopped = sessions.filter((_, index) => Exit.isSuccess(settled[index]));
     printSessions(stopped, json, bulk);
-    const failed = settled.flatMap((result) => result.status === "rejected" ? [String(result.reason)] : []);
-    if (failed.length) throw new Error(failed.join("\n"));
+    const failed = settled.flatMap((result) => Exit.isFailure(result) ? [asError(Cause.squash(result.cause)).message] : []);
+    if (failed.length) return yield* Effect.fail(new Error(failed.join("\n")));
     return 0;
   }
   printSessions(sessions, json, bulk);
   return 0;
-}
-
-export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+});
+export const main = Effect.fn("main")(function* (argv: readonly string[]) {
   const [action, ...args] = argv;
-  if (action === "upgrade") return upgrade(args);
+  if (action === "upgrade") return yield* upgrade(args);
   if (action === "__session") {
     const [id, name, ...raw] = args;
-    return runSession(id, name, (signal, ready) => run(parseArgs(raw), true, { signal, ready }));
+    return yield* runSession(id, name, (signal, ready) =>
+      attempt(() => parseArgs(raw)).pipe(Effect.flatMap((options) => run(options, true, { signal, ready }))));
   }
-  if (["status", "stop", "list", "stop-all", "qr", "QR", "qri"].includes(action)) return manage(action, args);
+  if (["status", "stop", "list", "stop-all", "qr", "QR", "qri"].includes(action)) return yield* manage(action, args);
   const background = action === "start";
   const raw = background ? args : argv;
-  const options = parseArgs(raw);
+  const options = yield* attempt(() => parseArgs(raw));
   if (options.help) {
     process.stdout.write(`${usage}\n`);
     return 0;
   }
   if (background) {
     const name = options.name ?? options.command[0];
-    const session = await startSession(fileURLToPath(import.meta.url), raw, name, compiled);
+    const session = yield* startSession(fileURLToPath(import.meta.url), raw, name, compiled);
     if (!options.json) printSessions([session], false, false);
-    const qr = options.qr || options.image ? await renderQr(preferredUrl(session.urls), Boolean(options.image)) : undefined;
+    const qr = options.qr || options.image ? yield* attempt(() => preferredUrl(session.urls)).pipe(Effect.flatMap((url) => renderQr(url, Boolean(options.image)))) : undefined;
     if (options.json) process.stdout.write(JSON.stringify({ ...session, ...qr }) + "\n");
     else if (qr) printQr(qr, process.stdout);
     return 0;
   }
-  if (options.name) throw new Error("--name ist nur mit 'start' verfügbar.");
-  return run(options, action !== "run");
-}
+  if (options.name) return yield* Effect.fail(new Error("--name ist nur mit 'start' verfügbar."));
+  return yield* run(options, action !== "run");
+});
 
-if (compiled || (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1]))) {
-  main().then((status) => {
-    process.exitCode = status;
-  }).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`prex: ${message}\n`);
+if (compiled || import.meta.main) {
+  // Prex forwards the original signal to its child group and owns the exit code.
+  const exit = await Effect.runPromiseExit(main(process.argv.slice(2)).pipe(Effect.provide([BunServices.layer, FetchHttpClient.layer])));
+  if (Exit.isSuccess(exit)) process.exitCode = exit.value;
+  else {
+    process.stderr.write(`prex: ${asError(Cause.squash(exit.cause)).message}\n`);
     process.exitCode = 1;
-  });
+  }
 }

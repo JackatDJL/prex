@@ -1,27 +1,14 @@
 name: prex
-arch: all
+arch: ${PREX_ARCH}
 version: ${PREX_VERSION}
-maintainer: JackatDJL
+maintainer: jkxrx
 description: Reserve free local ports and manage development previews.
 homepage: https://prex.djl.foundation
 section: devel
 priority: optional
 
 contents:
-  - src: ${PREX_STAGE}/
-    dst: /usr/lib/prex/
-    type: tree
-  - src: /usr/lib/prex/dist/cli.js
+  - src: ${PREX_STAGE}/prex
     dst: /usr/bin/prex
-    type: symlink
-
-overrides:
-  deb:
-    depends:
-      - nodejs (>= 22)
-  rpm:
-    depends:
-      - nodejs >= 22
-  archlinux:
-    depends:
-      - nodejs>=22
+  - src: LICENSE
+    dst: /usr/share/licenses/prex/LICENSE

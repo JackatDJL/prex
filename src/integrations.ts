@@ -13,8 +13,7 @@
  * (at your option) any later version.
  */
 
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { Effect, FileSystem } from "effect";
 import { join } from "node:path";
 
 export interface PrepareRunInput {
@@ -28,7 +27,6 @@ export interface PreparedRun {
   count: number;
   command: readonly string[];
   environment(ports: readonly number[]): NodeJS.ProcessEnv;
-  dispose(): Promise<void>;
 }
 
 type Integration = {
@@ -71,35 +69,31 @@ const profiles: Readonly<Record<string, Integration>> = { portfolio };
  * Prepares profile-specific run state. The caller reserves `count` ports and
  * merges `environment(ports)` over its inherited process environment.
  */
-export async function prepareRun(input: PrepareRunInput): Promise<PreparedRun> {
-  const profile = input.profile === undefined ? undefined : profiles[input.profile];
+export const prepareRun = Effect.fn("prepareRun")(function* (input: PrepareRunInput) {
+  const fs = yield* FileSystem.FileSystem;
+  const profile = input.profile !== undefined && Object.hasOwn(profiles, input.profile)
+    ? profiles[input.profile]
+    : undefined;
   if (input.profile !== undefined && !profile) {
-    throw new Error(`Unbekanntes Prex-Profil: ${input.profile}`);
+    return yield* Effect.fail(new Error(`Unbekanntes Prex-Profil: ${input.profile}`));
   }
   if (input.command.length === 0 && !profile?.command) {
-    throw new Error("Es muss ein Startbefehl angegeben werden.");
+    return yield* Effect.fail(new Error("Es muss ein Startbefehl angegeben werden."));
   }
 
   const count = profile?.count ?? input.count ?? 1;
   if (!Number.isInteger(count) || count < 1 || count > 5) {
-    throw new Error("Die Anzahl der Ports muss eine ganze Zahl zwischen 1 und 5 sein.");
+    return yield* Effect.fail(new Error("Die Anzahl der Ports muss eine ganze Zahl zwischen 1 und 5 sein."));
   }
   if (profile && input.count !== undefined && input.count !== profile.count) {
-    throw new Error(`Das Profil ${input.profile} benötigt genau ${profile.count} Ports.`);
+    return yield* Effect.fail(new Error(`Das Profil ${input.profile} benötigt genau ${profile.count} Ports.`));
   }
 
-  let runtimeDirectory: string | undefined;
-  try {
-    if (profile?.runtimeDirectory) {
-      runtimeDirectory = await mkdtemp(join(tmpdir(), "prex-portfolio-"));
-      await mkdir(join(runtimeDirectory, "vite-env"));
-    }
-  } catch (error) {
-    if (runtimeDirectory) await rm(runtimeDirectory, { recursive: true, force: true });
-    throw error;
-  }
+  const runtimeDirectory = profile?.runtimeDirectory
+    ? yield* fs.makeTempDirectoryScoped({ prefix: "prex-portfolio-" })
+    : undefined;
+  if (runtimeDirectory) yield* fs.makeDirectory(join(runtimeDirectory, "vite-env"));
 
-  let disposed = false;
   return {
     count,
     command: profile?.command ?? input.command,
@@ -120,10 +114,5 @@ export async function prepareRun(input: PrepareRunInput): Promise<PreparedRun> {
       }
       return { ...overrides, ...(profile?.environment(assignedPorts, runtimeDirectory) ?? {}) };
     },
-    async dispose() {
-      if (disposed) return;
-      disposed = true;
-      if (runtimeDirectory) await rm(runtimeDirectory, { recursive: true, force: true });
-    },
-  };
-}
+  } satisfies PreparedRun;
+});

@@ -14,76 +14,93 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
+import { Cause, Effect, FileSystem, Schema } from "effect";
+import { asError, task } from "./failure.js";
 import { createConnection, createServer, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export interface Endpoint {
-  port: number;
-  local: string;
-  tailscale?: string;
-}
-
-export interface Session {
-  id: string;
-  name: string;
-  cwd: string;
-  startedAt: string;
-  urls: Endpoint[];
-  log: string;
-}
+const EndpointSchema = Schema.Struct({
+  port: Schema.Int,
+  local: Schema.String,
+  tailscale: Schema.optionalKey(Schema.String),
+});
+const SessionSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  cwd: Schema.String,
+  startedAt: Schema.String,
+  urls: Schema.mutable(Schema.Array(EndpointSchema)),
+  log: Schema.String,
+});
+export type Endpoint = typeof EndpointSchema.Type;
+export type Session = typeof SessionSchema.Type;
 
 const startupTimeout = 50_000;
 const statePath = () => join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "prex", "sessions");
 const sessionPath = (id: string) => join(statePath(), id);
 const socketPath = (id: string) => join(sessionPath(id), "control");
 
-export async function startSession(entry: string, args: readonly string[], name: string, compiled = false): Promise<Session> {
-  const id = randomUUID().replaceAll("-", "").slice(0, 16);
-  await mkdir(statePath(), { recursive: true, mode: 0o700 });
-  await mkdir(sessionPath(id), { mode: 0o700 });
-  let worker: ChildProcess | undefined;
-  try {
-    const log = await open(join(sessionPath(id), "output.log"), "wx", 0o600);
-    try {
-      worker = spawn(process.execPath, [...(compiled ? [] : [entry]), "__session", id, name, ...args], {
-        detached: true, stdio: ["ignore", log.fd, log.fd, "ipc"],
-      });
-    } finally {
-      await log.close();
-    }
-    const child = worker;
-    return await new Promise<Session>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Zeitlimit beim Start der Session.")), startupTimeout);
-      child.once("error", reject);
-      child.once("exit", (code) => reject(new Error(`Session vorzeitig beendet (${code}).`)));
-      child.once("message", (message: { session?: Session; error?: string }) => {
-        if (message.session) resolve(message.session);
-        else reject(new Error(message.error ?? "Ungültige Antwort vom Session-Prozess."));
-      });
-      child.once("disconnect", () => reject(new Error("Session hat die Startverbindung geschlossen.")));
-      child.once("exit", () => clearTimeout(timeout));
-      child.once("message", () => clearTimeout(timeout));
-      child.once("disconnect", () => clearTimeout(timeout));
-      child.once("error", () => clearTimeout(timeout));
-    });
-  } catch (error) {
-    worker?.kill("SIGTERM");
-    throw new Error(`${error instanceof Error ? error.message : String(error)} Log: ${join(sessionPath(id), "output.log")}`);
-  } finally {
-    if (worker?.connected) worker.disconnect();
-    worker?.unref();
-  }
-}
+export const startSession = Effect.fn("startSession")(function* (
+  entry: string, args: readonly string[], name: string, compiled: boolean,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const id = crypto.randomUUID().replaceAll("-", "").slice(0, 16);
+  const logPath = join(sessionPath(id), "output.log");
+  yield* fs.makeDirectory(statePath(), { recursive: true, mode: 0o700 });
+  yield* fs.makeDirectory(sessionPath(id), { mode: 0o700 });
 
-export async function runSession(
+  return yield* Effect.scoped(Effect.gen(function* () {
+    // The detached worker needs inherited log descriptors and a short-lived IPC channel.
+    const log = yield* Effect.acquireRelease(
+      task(() => open(logPath, "wx", 0o600)),
+      (log) => task(() => log.close()).pipe(Effect.orDie),
+    );
+    return yield* Effect.callback<Session, Error>((resume) => {
+      let child: ChildProcess;
+      try {
+        child = spawn(process.execPath, [...(compiled ? [] : ["--no-env-file", entry]), "__session", id, name, ...args], {
+          detached: true, stdio: ["ignore", log.fd, log.fd, "ipc"],
+        });
+      } catch (error) {
+        resume(Effect.fail(asError(error)));
+        return;
+      }
+      let finished = false;
+      const finish = (result: Effect.Effect<Session, Error>, keepWorker = false) => {
+        if (finished) return;
+        finished = true;
+        if (!keepWorker) child.kill("SIGTERM");
+        if (child.connected) child.disconnect();
+        child.unref();
+        resume(result);
+      };
+      child.once("error", (error) => finish(Effect.fail(error)));
+      child.once("exit", (code) => finish(Effect.fail(new Error(`Session vorzeitig beendet (${code}).`))));
+      child.once("disconnect", () => finish(Effect.fail(new Error("Session hat die Startverbindung geschlossen."))));
+      child.once("message", (message: { session?: Session; error?: string }) => {
+        if (message.session) finish(Effect.succeed(message.session), true);
+        else finish(Effect.fail(new Error(message.error ?? "Ungültige Antwort vom Session-Prozess.")));
+      });
+      return Effect.sync(() => finish(Effect.fail(new Error("Session-Start abgebrochen."))));
+    }).pipe(Effect.timeoutOrElse({
+      duration: startupTimeout,
+      orElse: () => Effect.fail(new Error("Zeitlimit beim Start der Session.")),
+    }));
+  })).pipe(Effect.mapError((error) => new Error(`${error.message} Log: ${logPath}`)));
+});
+
+export const runSession = Effect.fn("runSession")(function* <E, R>(
   id: string,
   name: string,
-  run: (signal: AbortSignal, ready: (urls: Endpoint[], cwd: string) => Promise<void>) => Promise<number>,
-): Promise<number> {
-  if (!process.send || !/^[0-9a-f]{16}$/.test(id)) throw new Error("Ungültiger interner Session-Aufruf.");
+  run: (signal: AbortSignal, ready: (urls: Endpoint[], cwd: string) => Effect.Effect<void, Error>) => Effect.Effect<number, E, R>,
+) {
+  if (!process.send || !/^[0-9a-f]{16}$/.test(id)) {
+    return yield* Effect.fail(new Error("Ungültiger interner Session-Aufruf."));
+  }
+  const fs = yield* FileSystem.FileSystem;
+  const path = join(sessionPath(id), "session.json");
   const controller = new AbortController();
   const stop = () => controller.abort();
   const waiting = new Set<Socket>();
@@ -110,67 +127,67 @@ export async function runSession(
       } else socket.destroy();
     });
   });
-  process.on("SIGTERM", stop);
-  process.on("SIGINT", stop);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(socketPath(id), resolve);
+  return yield* Effect.gen(function* () {
+    yield* Effect.callback<void, Error>((resume) => {
+      server.once("error", (error) => resume(Effect.fail(error)));
+      server.listen(socketPath(id), () => resume(Effect.void));
     });
-    return await run(controller.signal, async (urls, cwd) => {
+    return yield* run(controller.signal, (urls, cwd) => Effect.gen(function* () {
       const session: Session = {
         id, name, cwd, startedAt: new Date().toISOString(), urls, log: join(sessionPath(id), "output.log"),
       };
-      const path = join(sessionPath(id), "session.json");
-      await writeFile(path + ".tmp", JSON.stringify(session), { mode: 0o600, flag: "wx" });
-      await rename(path + ".tmp", path);
+      yield* fs.writeFileString(path + ".tmp", JSON.stringify(session), { mode: 0o600, flag: "wx" });
+      yield* fs.rename(path + ".tmp", path);
       if (process.connected) process.send?.({ session });
-    });
-  } catch (error) {
-    if (process.connected) process.send?.({ error: error instanceof Error ? error.message : String(error) });
-    throw error;
-  } finally {
-    process.off("SIGTERM", stop);
-    process.off("SIGINT", stop);
-    await rm(join(sessionPath(id), "session.json"), { force: true });
-    for (const socket of connections) {
-      if (waiting.has(socket)) socket.end("ok");
-      else socket.destroy();
-    }
-    if (server.listening) server.close();
-  }
-}
+    }).pipe(Effect.uninterruptible));
+  }).pipe(
+    Effect.ensuring(fs.remove(path, { force: true }).pipe(
+      Effect.ensuring(Effect.sync(() => {
+        for (const socket of connections) {
+          if (waiting.has(socket)) socket.end("ok");
+          else socket.destroy();
+        }
+        if (server.listening) server.close();
+      })),
+      Effect.orDie,
+    )),
+    Effect.onError((cause) => Effect.sync(() => {
+      if (process.connected) process.send?.({ error: asError(Cause.squash(cause)).message });
+    })),
+  );
+});
 
-function request(session: Session, command: "status" | "stop"): Promise<void> {
-  return new Promise((resolve, reject) => {
+function request(session: Session, command: "status" | "stop") {
+  return Effect.callback<void, Error>((resume) => {
     const socket = createConnection(socketPath(session.id));
     let response = "";
-    socket.setTimeout(command === "stop" ? 45_000 : 1500, () => socket.destroy(new Error("Session antwortet nicht.")));
     socket.on("connect", () => socket.write(command + "\n"));
     socket.on("data", (chunk) => { response += String(chunk); });
-    socket.on("error", reject);
-    socket.on("close", () => response === "ok" ? resolve() : reject(new Error(`Session ${session.id} ist nicht erreichbar.`)));
-  });
+    socket.on("error", (error) => resume(Effect.fail(error)));
+    socket.on("close", () => resume(response === "ok" ? Effect.void
+      : Effect.fail(new Error(`Session ${session.id} ist nicht erreichbar.`))));
+    return Effect.sync(() => { socket.destroy(); });
+  }).pipe(Effect.timeoutOrElse({
+    duration: command === "stop" ? 45_000 : 1500,
+    orElse: () => Effect.fail(new Error("Session antwortet nicht.")),
+  }));
 }
 
-export async function listSessions(): Promise<Session[]> {
-  const ids = await readdir(statePath()).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  });
-  const sessions = await Promise.all(ids.filter((id) => /^[0-9a-f]{16}$/.test(id)).map(async (id) => {
-    try {
-      const session = JSON.parse(await readFile(join(sessionPath(id), "session.json"), "utf8")) as Session;
-      if (session.id !== id) return undefined;
-      await request(session, "status");
-      return session;
-    } catch {
-      return undefined;
-    }
-  }));
+export const listSessions = Effect.fn("listSessions")(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const ids = yield* fs.readDirectory(statePath()).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed([])),
+  );
+  const sessions = yield* Effect.forEach(ids.filter((id) => /^[0-9a-f]{16}$/.test(id)), (id) =>
+    fs.readFileString(join(sessionPath(id), "session.json")).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(SessionSchema))),
+      Effect.filterOrFail((session) => session.id === id, () => new Error("Ungültige Session-ID.")),
+      Effect.tap((session) => request(session, "status")),
+      Effect.catch(() => Effect.succeed(undefined)),
+    ), { concurrency: 32 });
   return sessions.filter((session): session is Session => session !== undefined)
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-}
+});
 
 export function selectSession(sessions: Session[], selector?: string): Session {
   const exact = sessions.find(({ id }) => id === selector);

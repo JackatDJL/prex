@@ -3,11 +3,11 @@ title: Linux-Pakete
 description: Installiere Prex mit apt, dnf oder pacman aus einer lokalen Paketdatei.
 ---
 
-Der GitHub-Actions-Workflow **Publish Prex** baut die drei Pakete aus derselben Version wie das npm-Paket. Die Dateien liegen derzeit nur als GitHub-Actions-Artefakt im privaten Repo und sind für Maintainer mit Repo-Zugriff verfügbar. Öffentliche Installationen verwenden vorerst npm. Lade zum Testen das Artefakt `prex-linux` herunter und entpacke es. Alternativ kannst du die Pakete aus einem Checkout mit Node.js ab 22 und installiertem nFPM selbst bauen.
+Der GitHub-Actions-Workflow **Publish Prex** baut die drei Pakete aus derselben Version wie das npm-Paket. Die Dateien liegen derzeit nur als GitHub-Actions-Artefakt im privaten Repo und sind für Maintainer mit Repo-Zugriff verfügbar. Öffentliche Installationen verwenden vorerst npm. Lade zum Testen das Artefakt `prex-linux` herunter und entpacke es. Alternativ kannst du die Pakete aus einem Checkout mit Bun ab 1.4.4 und installiertem nFPM selbst bauen.
 
 ```sh
-npm ci
-npm run package:linux
+bun install --frozen-lockfile
+bun run package:linux
 ```
 
 Die Dateien liegen dann unter `.artifacts/linux/`. Wechsle in das Verzeichnis mit den ausgepackten Dateien und verwende den Befehl für deine Distribution.
@@ -23,4 +23,4 @@ sudo dnf install ./prex-*.rpm
 sudo pacman -U ./prex-*.pkg.tar.zst
 ```
 
-Die Pakete deklarieren Node.js ab 22 als Abhängigkeit. Dein Paketmanager benötigt eine Paketquelle mit dieser Node-Version. Prex ist danach als `prex` im PATH verfügbar. Für automatische Updates über das System wären zusätzlich signierte Paketquellen nötig.
+Die Pakete enthalten die Bun-Laufzeit. Prex ist danach als `prex` im PATH verfügbar. Für automatische Updates über das System wären zusätzlich signierte Paketquellen nötig.
