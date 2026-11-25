@@ -3,36 +3,38 @@ title: Getting started
 description: Start a local development server on a port chosen by Prex.
 ---
 
-## Why use Prex?
+## From project to preview
 
-Two Git worktrees can carry identical configuration. That includes the default port. If both apps ask the OS for port 3000, only one can listen there. You can assign a port manually, but the change also needs to reach browser URLs, API endpoints and any other tools that depend on the server.
+In your project directory, put `prex run --` in front of your usual launch command. This example uses a Next.js dev server, which reads the assigned port from `PORT`.
 
-Prex gives each launch its own port allocation and passes those ports to the existing dev command. A foreground run is handy when you want to see the output. A named background session is handy when you need to close the terminal and find the preview again later.
-
-## Start a server
-
-Install with npm if you already have Node.js 22 or newer. See [installation](/en/docs/installation/) for the native binary and update channels.
+<figure className="prex-flow">
+  <figcaption>A launch in three steps</figcaption>
+  <ol role="list">
+    <li>Prex reserves a free port.</li>
+    <li>Your dev server reads the port from <code>PORT</code>.</li>
+    <li>You open the printed URL.</li>
+  </ol>
+</figure>
 
 ```sh
-npm install -g @jkxrx/prex
-prex run -- node -e 'require("node:http").createServer((_, res) => res.end("Hello from Prex")).listen(Number(process.env.PREX_PORT), "127.0.0.1")'
+prex run -- npm run dev
 ```
 
-Open the printed URL in your browser. The inline Node command listens on the exact port from `PREX_PORT`. Press Ctrl+C to stop it. When integrating your real app, find the flag or variable it accepts and pass the assigned port there. For recipes, see [configuration](/en/docs/configuration/).
+Open the printed URL in your browser. If the CLI is missing, see [installation](/en/docs/installation/). Press Ctrl+C to stop it. When integrating your real app, find the flag or variable it accepts and pass the assigned port there. For recipes, see [configuration](/en/docs/configuration/).
 
 ## Keep it running
 
-Use the same launch in the background:
+Run the command in a named session to keep it running independently of your terminal.
 
 ```sh
-prex start --name hello -- node -e 'require("node:http").createServer((_, res) => res.end("Hello from Prex")).listen(Number(process.env.PREX_PORT), "127.0.0.1")'
+prex start --name web -- npm run dev
 prex list
-prex status hello
-prex stop hello
+prex status web
+prex stop web
 ```
 
 The first command waits for the port to open and prints a URL. The second shows sessions for the same user and state directory. The third gives details about this session, including its log. The last command asks the worker to shut it down.
 
 ## Where to go next
 
-If you already know which services you need, [configure their port roles](/en/docs/configuration/). If you want to understand when ports are reserved and released, read [the architecture guide](/en/docs/architecture/). For a preview that needs both Laravel and Vite, use the [portfolio walkthrough](/en/docs/portfolio/).
+If you already know which services you need, [configure their port roles](/en/docs/configuration/). If you want to understand when ports are reserved and released, read [the architecture guide](/en/docs/architecture/).

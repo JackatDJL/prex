@@ -15,6 +15,15 @@ Size the range for the total number of simultaneous ports across applications, p
 
 ## Define a project script
 
+<figure className="prex-flow">
+  <figcaption>How port roles reach your process</figcaption>
+  <ol role="list">
+    <li>The project script declares port roles.</li>
+    <li>Prex reserves a port for each role.</li>
+    <li>The launch command receives ports as arguments or environment variables.</li>
+  </ol>
+</figure>
+
 Add `config/prex.toml` under your project root. Prex searches from the current working directory upward, picks the first matching file and runs that script from the directory containing `config/`.
 
 ```toml

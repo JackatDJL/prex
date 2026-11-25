@@ -37,21 +37,45 @@ for page in {1..10}; do
 done
 if [[ -z "$tag" ]]; then printf 'No published Prex %s build found.\n' "$channel" >&2; exit 1; fi
 download="https://github.com/$repo/releases/download/$tag"
-curl -fsSL --retry 2 "$download/$asset" -o "$tmp/$asset"
 curl -fsSL --retry 2 "$download/$asset.sha256" -o "$tmp/$asset.sha256"
-(
-  cd "$tmp"
-  if command -v sha256sum >/dev/null; then
-    sha256sum -c "$asset.sha256"
+if command -v sha256sum >/dev/null; then
+  checksum=(sha256sum)
+else
+  checksum=(shasum -a 256)
+fi
+read -r expected filename < "$tmp/$asset.sha256" || true
+if [[ ! "$expected" =~ ^[0-9a-f]{64}$ || "$filename" != "$asset" ]]; then
+  printf 'Invalid checksum for %s.\n' "$asset" >&2
+  exit 1
+fi
+
+binary="$root/bin/prex"
+installed=
+if [[ -f "$binary" && -r "$binary" && -x "$binary" ]]; then
+  installed=$("${checksum[@]}" < "$binary")
+fi
+
+if [[ "${installed%% *}" == "$expected" ]]; then
+  printf 'Prex is already up to date (%s).\n' "$tag"
+else
+  printf 'Downloading Prex (%s)…\n' "$tag" >&2
+  if [[ -t 2 ]]; then
+    curl -fSL --progress-bar --retry 2 "$download/$asset" -o "$tmp/$asset"
   else
-    shasum -a 256 -c "$asset.sha256"
+    curl -fsSL --retry 2 "$download/$asset" -o "$tmp/$asset"
   fi
-)
-chmod 755 "$tmp/$asset"
+  printf 'Verifying download…\n' >&2
+  downloaded=$("${checksum[@]}" < "$tmp/$asset")
+  if [[ "${downloaded%% *}" != "$expected" ]]; then
+    printf 'Checksum mismatch for %s.\n' "$asset" >&2
+    exit 1
+  fi
+  chmod 755 "$tmp/$asset"
+  mv -f "$tmp/$asset" "$binary"
+  printf 'Installed Prex (%s) at %s\n' "$channel" "$binary"
+fi
 printf '%s\n' "$channel" > "$tmp/channel"
-mv -f "$tmp/$asset" "$root/bin/prex"
 mv -f "$tmp/channel" "$root/channel"
-printf 'Installed Prex (%s) at %s/bin/prex\n' "$channel" "$root"
 case "${SHELL:-}" in
   zsh|*/zsh) rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
   bash|*/bash) rc="$HOME/.bashrc" ;;

@@ -18,5 +18,5 @@ import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { source } from '../../lib/source';
 
 export default function Layout({ children }: { children: ReactNode }) {
-  return <DocsLayout tree={source.getPageTree()} nav={{ title: 'Prex', url: '/' }} searchToggle={{ enabled: false }}><div className="prex-docs" lang="de">{children}</div></DocsLayout>;
+  return <DocsLayout tree={source.getPageTree()} nav={{ title: <><img src="/icon.svg" width={26} height={26} alt="" />Prex</>, url: '/' }} searchToggle={{ enabled: false }} containerProps={{ className: "prex-docs", lang: "de" }}>{children}</DocsLayout>;
 }

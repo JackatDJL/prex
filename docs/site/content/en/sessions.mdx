@@ -5,6 +5,16 @@ description: Keep development servers running, inspect their logs, and share a p
 
 ## Session commands
 
+<figure className="prex-flow">
+  <figcaption>Session lifecycle</figcaption>
+  <ol role="list">
+    <li><code>start</code> launches the worker.</li>
+    <li><code>list</code> shows active sessions.</li>
+    <li><code>status</code> shows details and the log path.</li>
+    <li><code>stop</code> shuts down the session.</li>
+  </ol>
+</figure>
+
 | Command | What it does |
 | --- | --- |
 | `prex start --name web web` | Start a configured project script in a worker and register the session. |

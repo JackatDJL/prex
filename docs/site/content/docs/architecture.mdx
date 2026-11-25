@@ -9,17 +9,15 @@ Ein Worktree trennt Dateien und Abhängigkeiten, aber er hat keinen eigenen Netz
 
 Prex macht die Portwahl zum Teil des Startvorgangs. Du deklarierst, wie viele Server einen Port brauchen. Prex reserviert die Ports, übergibt sie an deinen Startbefehl und kann eine benannte Session führen. Die Anwendung muss die übergebenen Ports übernehmen. Ein explizites `--port` und ein Modus wie Vites `--strictPort` machen aus einem Bind-Fehler einen sichtbaren Startfehler.
 
-```text
-Worktree A ── prex start --name app-a ──┐
-                                       ├── Portvergabe (Loopback + Reservierung)
-Worktree B ── prex start --name app-b ──┘
-                    │
-          ┌─────────┴─────────────┐
-          │ PREX_PORT / Argument  │
-          └─────────┬─────────────┘
-                    ▼
-              Dein Dev-Server
-```
+<figure className="prex-flow">
+  <figcaption>Vom Worktree zum Dev-Server</figcaption>
+  <ol role="list">
+    <li>Befehl und Portrollen auflösen</li>
+    <li>Freie Ports reservieren</li>
+    <li>Ports an den Startbefehl übergeben</li>
+    <li>Dev-Server bindet die Ports</li>
+  </ol>
+</figure>
 
 ## Die vier Schritte eines Starts
 
@@ -42,16 +40,15 @@ Der Standardbereich ist 41000 bis 41999. Prex versucht, einen TCP-Socket auf IPv
 
 Der Socket muss geschlossen werden, bevor dein eigener Server denselben Port binden kann. Der Reservierungseintrag bleibt dabei bestehen. Ein Programm außerhalb von Prex kann trotzdem zwischen dem Schließen und dem nächsten Bind auf den Port zugreifen. Behandle die ausgegebene URL deshalb zuerst als erwartete Adresse und prüfe anschließend die Antwort der Anwendung. Prex kann den Netzwerk-Namespace des Systems nicht für Fremdprozesse sperren.
 
-```text
-┌ Kandidat aus dem konfigurierten Bereich ──┐
-│ TCP-Probe auf 127.0.0.1 erfolgreich?      │
-├ Ja ────────────────────────┬ Nein ────────┤
-│ Reservierung veröffentlichen│ Neu wählen │
-├ Eintrag bereits vorhanden? ┴─────────────┤
-│ Ja: Besitzer prüfen, erneut versuchen   │
-│ Nein: Reservierung bis Prozessende halten│
-└──────────────────────────────────────────┘
-```
+<figure className="prex-flow">
+  <figcaption>Wie Prex einen Port reserviert</figcaption>
+  <ol role="list">
+    <li>Port auf Loopback testen</li>
+    <li>Bei belegtem Port erneut wählen</li>
+    <li>Reservierung atomar veröffentlichen</li>
+    <li>Bei Kollision Besitzer prüfen und erneut versuchen</li>
+  </ol>
+</figure>
 
 ### Vordergrund und Hintergrund
 

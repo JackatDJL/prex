@@ -1,17 +1,35 @@
 ---
-title: Erste Schritte
-description: Starte einen bestehenden Dev-Befehl mit einem freien lokalen TCP-Port.
+title: Dein erstes Preview
+description: Starte deinen Dev-Server auf einem freien Port und öffne die ausgegebene URL.
 ---
 
-Prex benötigt Node.js ab Version 22 und ist für Linux und macOS vorgesehen. Installiere die CLI mit npm:
+## Vom Projekt zum Preview
+
+Wechsle in dein Projektverzeichnis und setze `prex run --` vor deinen üblichen Startbefehl. Das Beispiel verwendet einen Next.js-Dev-Server, der den zugewiesenen Port aus `PORT` liest.
+
+<figure className="prex-flow">
+  <figcaption>Ein Start in drei Schritten</figcaption>
+  <ol role="list">
+    <li>Prex reserviert einen freien Port.</li>
+    <li>Dein Dev-Server liest den Port aus <code>PORT</code>.</li>
+    <li>Du öffnest die ausgegebene URL.</li>
+  </ol>
+</figure>
 
 ```sh
-npm install -g @jkxrx/prex
+prex run -- npm run dev
 ```
+
+Beende den Vordergrundlauf mit Ctrl+C. Fehlt dir die CLI noch, findest du die Einrichtung unter [Installation](/docs/installation/). Erwartet dein Framework den Port als Argument, verwende ein [Projekt-Script](/docs/configuration/).
+
+## Das Preview wiederfinden
+
+Starte den Befehl als benannte Session, wenn das Preview unabhängig vom Terminal laufen soll.
 
 ```sh
-prex bun run dev
-prex run --ports 2 -- ./dev-stack
+prex start --name web -- npm run dev
+prex list
+prex stop web
 ```
 
-Der erste Port steht als `PORT`, `PREX_PORT` und `PREX_PORT_1` bereit. Weitere Ports erhalten fortlaufende Nummern. Next.js verwendet `PORT` als Vorgabe. Wenn dein Server ein Argument wie `--port` erwartet, definiere ein [Projekt-Script](/docs/configuration/).
+Unter [Sessions](/docs/sessions/) findest du Statusabfrage, Logs und Freigabe im Tailnet. Die [Architektur](/docs/architecture/) erklärt, wann Prex einen Port reserviert und wieder freigibt.
