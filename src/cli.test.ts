@@ -14,13 +14,47 @@
  */
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import test from "node:test";
+import { test } from "bun:test";
+import { BunServices } from "@effect/platform-bun";
+import { Effect, FileSystem, Stream } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { parseArgs } from "./cli.js";
+
+const cli = process.env.PREX_TEST_BINARY ?? join(import.meta.dir, "cli.ts");
+const executable = process.env.PREX_TEST_BINARY ? [cli] : [process.execPath, cli];
+const child = (source: string) => [process.execPath, "-e", source, "--"];
+const server = "Bun.listen({hostname:'127.0.0.1',port:Number(process.env.PORT),socket:{data(){}}})";
+
+const fixture = Effect.fn(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const root = yield* fs.makeTempDirectoryScoped({ prefix: "prex-test-" });
+  const launch = ([program, ...args]: readonly string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) =>
+    Effect.scoped(Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const proc = yield* spawner.spawn(ChildProcess.make(program, args, {
+        cwd: options.cwd ?? root, stdin: "ignore",
+        env: { ...process.env, XDG_STATE_HOME: root, XDG_CONFIG_HOME: root, TMPDIR: root, ...options.env },
+      }));
+      const [code, stdout, stderr] = yield* Effect.all([
+        proc.exitCode,
+        proc.stdout.pipe(Stream.decodeText(), Stream.mkString),
+        proc.stderr.pipe(Stream.decodeText(), Stream.mkString),
+      ], { concurrency: "unbounded" });
+      return { code, stdout, stderr };
+    })).pipe(Effect.timeout("20 seconds"));
+  const invoke = (args: string[], options?: Parameters<typeof launch>[1]) => launch([...executable, ...args], options);
+  const ok = (args: string[], options?: Parameters<typeof invoke>[1]) => invoke(args, options).pipe(
+    Effect.tap(({ code, stderr }) => Effect.sync(() => assert.equal(code, 0, stderr))),
+    Effect.map(({ stdout }) => stdout),
+  );
+  return { fs, root, launch, invoke, ok };
+});
+
+function integration<A, E>(name: string, program: Effect.Effect<A, E,
+  import("effect/Layer").Success<typeof BunServices.layer> | import("effect/Scope").Scope>) {
+  test(name, () => Effect.runPromise(Effect.scoped(program).pipe(Effect.provide(BunServices.layer))), 30_000);
+}
 
 test("short form preserves child arguments exactly", () => {
   const options = parseArgs(["bun", "run", "dev", "", "--label", "feature A"]);
@@ -55,135 +89,82 @@ test("invalid counts and a missing run separator are rejected", () => {
   assert.throws(() => parseArgs(["run", "dev"]), /nach '--'/);
 });
 
-test("the CLI forwards exact child arguments, port environment, and exit status", async () => {
-  const stateHome = await mkdtemp(join(tmpdir(), "prex-cli-test-"));
-  const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url));
-  const childCode = "console.log(JSON.stringify({ args: process.argv.slice(1), port: process.env.PREX_PORT, same: process.env.PORT === process.env.PREX_PORT })); process.exit(7)";
+integration("help, argv forwarding, port environment, exit status and start failures", Effect.gen(function* () {
+  const { invoke, ok } = yield* fixture();
+  assert.match(yield* ok(["--help"]), /Usage:/);
+  const result = yield* invoke(["run", "--ports", "1", "--", ...child(
+    "console.log(JSON.stringify({args:process.argv.slice(1),port:process.env.PORT,same:process.env.PORT===process.env.PREX_PORT}));process.exit(7)",
+  ), "feature A", ""]);
+  assert.equal(result.code, 7);
+  const [, port] = result.stderr.match(/^Prex-Ports: (\d+)\nhttp:\/\/127.0.0.1:\1\n$/) ?? [];
+  assert.ok(port);
+  assert.deepEqual(JSON.parse(result.stdout), { args: ["feature A", ""], port, same: true });
+  const missing = yield* invoke(["run", "--", "prex-command-that-does-not-exist"]);
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /^prex: .*prex-command-that-does-not-exist/);
+}));
 
-  try {
-    const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const cli = spawn(process.execPath, [
-        cliPath,
-        "run", "--ports", "1", "--", process.execPath, "-e", childCode, "feature A", "",
-      ], {
-        env: { ...process.env, XDG_STATE_HOME: stateHome },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      cli.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
-      cli.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
-      cli.once("error", reject);
-      cli.once("close", (code) => resolve({ code, stdout, stderr }));
-    });
-
-    assert.equal(result.code, 7);
-    assert.deepEqual(JSON.parse(result.stdout), {
-      args: ["feature A", ""],
-      port: result.stderr.match(/Prex-Ports: (\d+)/)?.[1],
-      same: true,
-    });
-    assert.match(result.stderr, /^Prex-Ports: (\d+)\nhttp:\/\/127\.0\.0\.1:\1\n$/);
-  } finally {
-    await rm(stateHome, { recursive: true, force: true });
-  }
-});
-
-test("a child start error is reported and exits unsuccessfully", async () => {
-  const stateHome = await mkdtemp(join(tmpdir(), "prex-cli-error-test-"));
-  const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url));
-  try {
-    const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
-      const cli = spawn(process.execPath, [cliPath, "run", "--", "prex-command-that-does-not-exist"], {
-        env: { ...process.env, XDG_STATE_HOME: stateHome },
-        stdio: ["ignore", "ignore", "pipe"],
-      });
-      let stderr = "";
-      cli.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
-      cli.once("error", reject);
-      cli.once("close", (code) => resolve({ code, stderr }));
-    });
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^prex: spawn prex-command-that-does-not-exist ENOENT\n$/);
-  } finally {
-    await rm(stateHome, { recursive: true, force: true });
-  }
-});
-
-test("named scripts use the project root and pass named ports through flags and URLs", async () => {
-  const root = await mkdtemp(join(tmpdir(), "prex-project-test-"));
-  const subfolder = join(root, "nested");
-  const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
-  const code = "console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(1),url:process.env.SIGNALING_URL}))";
-  try {
-    await mkdir(join(root, "config"));
-    await mkdir(subfolder);
-    await writeFile(join(root, "config", "prex.toml"), `
+integration("named scripts expand roles from the project root and support zero ports", Effect.gen(function* () {
+  const { fs, root, invoke } = yield* fixture();
+  const cwd = join(root, "nested");
+  yield* fs.makeDirectory(cwd);
+  yield* fs.makeDirectory(join(root, "config"));
+  const command = child("console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(1),url:process.env.SIGNALING_URL}))");
+  yield* fs.writeFileString(join(root, "config", "prex.toml"), `
 version = 1
 [scripts.web]
 ports = ["signalling", "web"]
-command = [${JSON.stringify(process.execPath)}, "-e", ${JSON.stringify(code)}, "--", "--port", "{{port.web}}"]
+command = ${JSON.stringify([...command, "--port", "{{port.web}}"])}
 env = { SIGNALING_URL = "ws://{{host}}:{{port.signalling}}" }
 [scripts.check]
-command = [${JSON.stringify(process.execPath)}, "-e", "process.exit(0)"]
+command = ${JSON.stringify(child("process.exit(0)"))}
 `);
-    const options = {
-      cwd: subfolder,
-      encoding: "utf8" as const,
-      env: { ...process.env, XDG_STATE_HOME: root, XDG_CONFIG_HOME: join(root, "global") },
-    };
-    const web = spawnSync(process.execPath, [cli, "web", "feature A"], options);
-    assert.equal(web.status, 0, web.stderr);
-    const [, signalPort, webPort] = /^Prex-Ports: (\d+), (\d+)\n/.exec(web.stderr) ?? [];
-    assert.ok(signalPort && webPort && signalPort !== webPort);
-    assert.deepEqual(JSON.parse(web.stdout), {
-      cwd: await realpath(root), args: ["--port", webPort, "feature A"], url: `ws://127.0.0.1:${signalPort}`,
-    });
-    const check = spawnSync(process.execPath, [cli, "check"], options);
-    assert.equal(check.status, 0, check.stderr);
-    assert.equal(check.stderr, "");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+  const web = yield* invoke(["web", "feature A"], { cwd });
+  assert.equal(web.code, 0, web.stderr);
+  const [, signalPort, webPort] = /^Prex-Ports: (\d+), (\d+)\n/.exec(web.stderr) ?? [];
+  assert.ok(signalPort && webPort && signalPort !== webPort);
+  assert.deepEqual(JSON.parse(web.stdout), {
+    cwd: yield* fs.realPath(root), args: ["--port", webPort, "feature A"], url: `ws://127.0.0.1:${signalPort}`,
+  });
+  assert.deepEqual(yield* invoke(["check"], { cwd }), { code: 0, stderr: "", stdout: "" });
+}));
 
-test("background previews expose URLs, produce QR codes, and stop by name or in bulk", async () => {
-  const root = await mkdtemp(join(tmpdir(), "prex-sessions-"));
-  const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
-  const server = "require('node:net').createServer().listen(Number(process.env.PORT), '127.0.0.1')";
-  const invoke = (...args: string[]) => {
-    const result = spawnSync(process.execPath, [cli, ...args], {
-      cwd: root, encoding: "utf8", timeout: 40_000,
-      env: { ...process.env, XDG_STATE_HOME: root, XDG_CONFIG_HOME: root, TMPDIR: root },
-    });
-    assert.equal(result.status, 0, result.stderr || String(result.error));
-    return result.stdout;
-  };
-  try {
-    const first = JSON.parse(invoke("start", "--name", "web", "--json", "--", process.execPath, "-e", server));
-    const second = JSON.parse(invoke("start", "--name", "signalling", "--json", "--", process.execPath, "-e", server));
-    assert.notEqual(first.urls[0].port, second.urls[0].port);
-    assert.equal(JSON.parse(invoke("status", "web", "--json")).id, first.id);
-    assert.equal(JSON.parse(invoke("list", "--json")).length, 2);
-    const { url, qr } = JSON.parse(invoke("qr", "web", "--json"));
-    assert.equal(url, first.urls[0].local);
-    assert.match(qr, /[▄▀█]/);
-    const { image } = JSON.parse(invoke("qri", "web", "--json"));
-    assert.deepEqual((await readFile(image)).subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    assert.equal(JSON.parse(invoke("stop", "web", "--json")).id, first.id);
-    assert.deepEqual(JSON.parse(invoke("stop-all", "--json")).map((session: { id: string }) => session.id), [second.id]);
-    assert.deepEqual(JSON.parse(invoke("list", "--json")), []);
-  } finally {
-    invoke("stop-all", "--json");
-    await rm(root, { recursive: true, force: true });
-  }
-});
+integration("portfolio profile sets two roles and removes its runtime directory", Effect.gen(function* () {
+  const { fs, invoke } = yield* fixture();
+  const output = yield* invoke(["--profile", "portfolio", ...child(
+    "console.log(JSON.stringify({app:process.env.PREX_PORT_APP,vite:process.env.PREX_PORT_VITE,dir:process.env.HOMEPAGE_PREVIEW_ENV_DIR,exists:require('node:fs').existsSync(process.env.HOMEPAGE_PREVIEW_ENV_DIR)}))",
+  )]);
+  assert.equal(output.code, 0, output.stderr);
+  const { app, vite, dir, exists } = JSON.parse(output.stdout);
+  assert.ok(app && vite && app !== vite && exists);
+  assert.equal(yield* fs.exists(dir), false);
+  const invalid = yield* invoke(["--ports", "1", "--profile", "portfolio", ...child("")]);
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /genau 2 Ports/);
+}));
 
-test("foreground JSON stays separate from child output and cleans up Tailscale Serve", async () => {
-  const root = await mkdtemp(join(tmpdir(), "prex-tail-test-"));
-  const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
-  try {
-    await writeFile(join(root, "tailscale"), `#!/bin/sh
+integration("start, list, status, QR, stop and stop-all operate on live sessions", Effect.gen(function* () {
+  const { fs, root, invoke, ok } = yield* fixture();
+  yield* Effect.addFinalizer(() => invoke(["stop-all", "--json"]).pipe(Effect.ignore));
+  const first = JSON.parse(yield* ok(["start", "--name", "web", "--json", "--", ...child(server)]));
+  const second = JSON.parse(yield* ok(["start", "--name", "signalling", "--json", "--", ...child(server)]));
+  assert.notEqual(first.urls[0].port, second.urls[0].port);
+  assert.equal(JSON.parse(yield* ok(["status", "web", "--json"])).id, first.id);
+  assert.equal(JSON.parse(yield* ok(["list", "--json"])).length, 2);
+  const { url, qr } = JSON.parse(yield* ok(["qr", "web", "--json"]));
+  assert.equal(url, first.urls[0].local);
+  assert.match(qr, /[▄▀█]/);
+  const { image } = JSON.parse(yield* ok(["qri", "web", "--json"]));
+  assert.deepEqual(Array.from((yield* fs.readFile(image)).subarray(0, 8)), [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(JSON.parse(yield* ok(["stop", "web", "--json"])).id, first.id);
+  assert.deepEqual(JSON.parse(yield* ok(["stop-all", "--json"])).map(({ id }: {id: string}) => id), [second.id]);
+  assert.deepEqual(JSON.parse(yield* ok(["list", "--json"])), []);
+  assert.deepEqual(yield* fs.readDirectory(join(root, "prex", "ports")), []);
+}));
+
+integration("foreground JSON and Tailscale cleanup preserve the CLI contract", Effect.gen(function* () {
+  const { fs, root, invoke } = yield* fixture();
+  yield* fs.writeFileString(join(root, "tailscale"), `#!/bin/sh
 case "$1:$2" in
   status:--json) echo '{"BackendState":"Running","Self":{"DNSName":"prex.example.ts.net."}}';;
   serve:status) echo '{}';;
@@ -195,16 +176,105 @@ case "$1:$2" in
   *) exit 9;;
 esac
 `, { mode: 0o700 });
-    const result = spawnSync(process.execPath, [cli, "run", "--json", "-t", "--", process.execPath, "-e", "console.log('child output')"], {
-      cwd: root, encoding: "utf8", timeout: 30_000,
-      env: { ...process.env, PATH: root + ":" + process.env.PATH, XDG_STATE_HOME: root, XDG_CONFIG_HOME: root },
+  const result = yield* invoke(["run", "--json", "-t", "--", ...child("console.log('child output')")],
+    { env: { PATH: root + ":" + process.env.PATH } });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stderr, "child output\n");
+  const [url] = JSON.parse(result.stdout).urls;
+  assert.equal(url.tailscale, `http://prex.example.ts.net:${url.port}`);
+  assert.equal(yield* fs.readFileString(join(root, "serve-closed")), "closed\n");
+}));
+
+integration("custom port range reclaims stale reservations and releases on failure", Effect.gen(function* () {
+  const { fs, root, invoke } = yield* fixture();
+  const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = probe.port;
+  const directory = join(root, "prex");
+  yield* Effect.ensuring(Effect.gen(function* () {
+    yield* fs.makeDirectory(join(directory, "ports"), { recursive: true });
+    yield* fs.writeFileString(join(directory, "config.json"), JSON.stringify({ version: 1, ports: { min: port, max: port } }));
+    const blocked = yield* invoke(["--", ...child("")]);
+    assert.equal(blocked.code, 1);
+    assert.match(blocked.stderr, /Unable to reserve/);
+  }), Effect.sync(() => probe.stop()));
+  const record = join(directory, "ports", `port-${port}.json`);
+  yield* fs.writeFileString(record, JSON.stringify({ version: 1, pid: 2147483647, port, runId: "stale" }));
+  const failed = yield* invoke(["--", "prex-command-that-does-not-exist"]);
+  assert.match(failed.stderr, /prex-command-that-does-not-exist/);
+  assert.equal(yield* fs.exists(record), false);
+  const reused = yield* invoke(["--json", "--", ...child("process.exit(0)")]);
+  assert.equal(reused.code, 0, reused.stderr);
+  assert.equal(JSON.parse(reused.stdout).urls[0].port, port);
+}));
+
+integration("QR accepts a direct URL and upgrade validates arguments and installation", Effect.gen(function* () {
+  const { ok, invoke } = yield* fixture();
+  assert.equal(JSON.parse(yield* ok(["QR", "https://example.com", "--json"])).url, "https://example.com/");
+  const invalid = yield* invoke(["upgrade", "--invalid"]);
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /Usage: prex upgrade/);
+  const unmanaged = yield* invoke(["upgrade", "--nightly"]);
+  assert.equal(unmanaged.code, 1);
+  assert.match(unmanaged.stderr, /Use the package manager/);
+}));
+
+integration("SIGTERM exits with 143 and frees the foreground port lease", Effect.gen(function* () {
+  const { fs, root } = yield* fixture();
+  const proc = yield* Effect.acquireRelease(
+    Effect.sync(() => Bun.spawn([...executable, "run", "--json", "--", ...child(server)], {
+      cwd: root, stdout: "pipe", stderr: "inherit", stdin: "ignore",
+      env: { ...process.env, XDG_CONFIG_HOME: root, XDG_STATE_HOME: root },
+    })),
+    (proc) => Effect.promise(async () => {
+      proc.kill("SIGTERM");
+      await proc.exited;
+    }),
+  );
+  const reader = proc.stdout.getReader();
+  const output = yield* Effect.promise(() => reader.read()).pipe(Effect.timeout("10 seconds"));
+  assert.ok(output.value);
+  assert.equal(JSON.parse(new TextDecoder().decode(output.value)).urls.length, 1);
+  proc.kill("SIGTERM");
+  assert.equal(yield* Effect.promise(() => proc.exited).pipe(Effect.timeout("10 seconds")), 143);
+  assert.deepEqual(yield* fs.readDirectory(join(root, "prex", "ports")), []);
+}));
+
+integration("failed background startup leaves no published session or port lease", Effect.gen(function* () {
+  const { fs, root, invoke, ok } = yield* fixture();
+  const result = yield* invoke(["start", "--name", "failed", "--json", "--", ...child("process.exit(9)")]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /vorzeitig beendet \(9\).*Log:/);
+  assert.deepEqual(JSON.parse(yield* ok(["list", "--json"])), []);
+  assert.deepEqual(yield* fs.readDirectory(join(root, "prex", "ports")), []);
+}));
+
+integration("managed upgrade downloads the installer and streams it to bash with the selected channel", Effect.gen(function* () {
+  const { fs, root, launch } = yield* fixture();
+  yield* fs.writeFileString(join(root, "channel"), "nightly\n");
+  // Run the real upgrade Effect and bash in an isolated Bun process. Supply
+  // the installation identity and HTTP response without touching the network.
+  const script = `
+    import assert from "node:assert/strict";
+    import { Effect } from ${JSON.stringify(import.meta.resolve("effect"))};
+    import { BunServices } from ${JSON.stringify(import.meta.resolve("@effect/platform-bun"))};
+    import { HttpClient, HttpClientResponse } from ${JSON.stringify(import.meta.resolve("effect/http"))};
+    globalThis.PREX_COMPILED = true;
+    process.execPath = process.env.PREX_INSTALL + "/bin/prex";
+    const { upgrade } = await import(${JSON.stringify(new URL("./upgrade.ts", import.meta.url).href)});
+    const client = HttpClient.make((request) => {
+      assert.equal(request.url, "https://prex.djl.foundation/install");
+      return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(
+        'printf "%s %s\\\\n" "$1" "$PREX_INSTALL"; exit 12'
+      )));
     });
-    assert.equal(result.status, 0, result.stderr || String(result.error));
-    assert.equal(result.stderr, "child output\n");
-    const [url] = JSON.parse(result.stdout).urls;
-    assert.equal(url.tailscale, `http://prex.example.ts.net:${url.port}`);
-    assert.equal(await readFile(join(root, "serve-closed"), "utf8"), "closed\n");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+    process.exitCode = await Effect.runPromise(upgrade(process.argv.slice(1)).pipe(
+      Effect.provideService(HttpClient.HttpClient, client),
+      Effect.provide(BunServices.layer),
+    ));
+  `;
+  const options = { env: { PREX_INSTALL: root } };
+  const defaultChannel = yield* launch(child(script), options);
+  assert.deepEqual(defaultChannel, { code: 12, stdout: `--nightly ${root}\n`, stderr: "" });
+  const stable = yield* launch([...child(script), "--stable"], options);
+  assert.deepEqual(stable, { code: 12, stdout: `--stable ${root}\n`, stderr: "" });
+}));

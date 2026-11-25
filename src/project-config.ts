@@ -13,8 +13,7 @@
  * (at your option) any later version.
  */
 
-import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { Effect, FileSystem, Path } from "effect";
 import { parse } from "smol-toml";
 
 const host = "127.0.0.1";
@@ -31,28 +30,30 @@ function strings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-export async function findProjectScript(cwd: string, name: string) {
+export const findProjectScript = Effect.fn("findProjectScript")(function* (cwd: string, name: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const { dirname, join, resolve } = yield* Path.Path;
   for (let root = resolve(cwd); ; root = dirname(root)) {
     const path = join(root, "config", "prex.toml");
-    const source = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    });
+    const source = yield* fs.readFileString(path).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
+    );
     if (source !== undefined) {
-      try {
-        const config = parse(source);
-        if (config.version !== 1) throw new Error("version muss 1 sein.");
-        const scripts = table(config.scripts);
-        if (!scripts) throw new Error("[scripts] fehlt oder ist keine Tabelle.");
-        if (!Object.hasOwn(scripts, name)) return undefined;
-        return decodeScript(root, scripts[name]);
-      } catch (error) {
-        throw new Error(`${path} (Script ${name}): ${error instanceof Error ? error.message : String(error)}`);
-      }
+      const projectRoot = root;
+      return yield* Effect.try({
+        try: () => {
+          const config = parse(source);
+          if (config.version !== 1) throw new Error("version muss 1 sein.");
+          const scripts = table(config.scripts);
+          if (!scripts) throw new Error("[scripts] fehlt oder ist keine Tabelle.");
+          return Object.hasOwn(scripts, name) ? decodeScript(projectRoot, scripts[name]) : undefined;
+        },
+        catch: (error) => new Error(`${path} (Script ${name}): ${String(error instanceof Error ? error.message : error)}`),
+      });
     }
     if (dirname(root) === root) return undefined;
   }
-}
+});
 
 function decodeScript(cwd: string, value: unknown) {
   const entry = table(value);

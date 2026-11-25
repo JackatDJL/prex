@@ -13,34 +13,37 @@
  * (at your option) any later version.
  */
 
-import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { Effect, FileSystem, Path, Stream } from "effect";
+import { HttpClient } from "effect/http";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
 
 declare const PREX_COMPILED: boolean;
 export const compiled = typeof PREX_COMPILED !== "undefined" && PREX_COMPILED;
 
-export async function upgrade(args: readonly string[]): Promise<number> {
+export const upgrade = Effect.fn("upgrade")(function* (args: readonly string[]) {
+  const fs = yield* FileSystem.FileSystem;
+  const { resolve } = yield* Path.Path;
   if (args.length > 1 || (args[0] && !["--stable", "--nightly"].includes(args[0]))) {
-    throw new Error("Usage: prex upgrade [--stable | --nightly]");
+    return yield* Effect.fail(new Error("Usage: prex upgrade [--stable | --nightly]"));
   }
   const root = resolve(process.env.PREX_INSTALL ?? resolve(homedir(), ".prex"));
   if (!compiled || process.execPath !== resolve(root, "bin/prex")) {
-    throw new Error("Use the package manager that installed Prex, or install from https://prex.djl.foundation/install.");
+    return yield* Effect.fail(new Error("Use the package manager that installed Prex, or install from https://prex.djl.foundation/install."));
   }
-  const channel = args[0]?.slice(2) ?? (await readFile(resolve(root, "channel"), "utf8")).trim();
-  if (channel !== "stable" && channel !== "nightly") throw new Error("Invalid installed channel.");
-  const response = await fetch("https://prex.djl.foundation/install", { signal: AbortSignal.timeout(15000) });
-  if (!response.ok) throw new Error(`Installer download failed (HTTP ${response.status}).`);
-  const script = await response.text();
-  return new Promise((done, reject) => {
-    const child = spawn("bash", ["-s", "--", `--${channel}`], {
-      env: { ...process.env, PREX_INSTALL: root }, stdio: ["pipe", "inherit", "inherit"],
-    });
-    child.on("error", reject);
-    child.on("close", (status) => done(status ?? 1));
-    child.stdin.on("error", reject);
-    child.stdin.end(script);
-  });
-}
+  const channel = args[0]?.slice(2) ?? (yield* fs.readFileString(resolve(root, "channel"))).trim();
+  if (channel !== "stable" && channel !== "nightly") return yield* Effect.fail(new Error("Invalid installed channel."));
+  const script = yield* HttpClient.get("https://prex.djl.foundation/install").pipe(
+    Effect.flatMap((response) => response.status >= 200 && response.status < 300
+      ? response.text
+      : Effect.fail(new Error(`Installer download failed (HTTP ${response.status}).`))),
+    Effect.timeout("15 seconds"),
+  );
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  return yield* spawner.exitCode(ChildProcess.make("bash", ["-s", "--", `--${channel}`], {
+    env: { ...process.env, PREX_INSTALL: root },
+    stdin: Stream.make(new TextEncoder().encode(script)),
+    stdout: "inherit",
+    stderr: "inherit",
+  }));
+});
