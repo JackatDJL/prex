@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 /**
  * Prex
  *
@@ -216,11 +216,21 @@ const run = Effect.fn("run")(function* (
     if (reservation) yield* reservation.releaseProbes;
 
     const ownGroup = Boolean(background) || !process.stdin.isTTY;
-    const child = yield* Effect.acquireRelease(attempt(() => Bun.spawn([...childCommand], {
+    const spawnOptions = {
       cwd, env, detached: ownGroup, stdin: "inherit",
       stdout: options.json && !background ? 2 : "inherit",
       stderr: "inherit",
-    })), (child) => Effect.gen(function* () {
+    } as const;
+    const child = yield* Effect.acquireRelease(attempt(() => {
+      try {
+        return Bun.spawn([...childCommand], spawnOptions);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOEXEC") throw error;
+        const [program, ...args] = childCommand;
+        const scriptPath = program.includes("/") ? program : Bun.which(program, { cwd, PATH: env.PATH }) ?? program;
+        return Bun.spawn(["/bin/sh", scriptPath, ...args], spawnOptions);
+      }
+    }), (child) => Effect.gen(function* () {
       const send = (signal: NodeJS.Signals) => {
         if (!ownGroup) {
           if (child.exitCode === null && child.signalCode === null) child.kill(signal);

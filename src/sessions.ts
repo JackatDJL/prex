@@ -60,7 +60,7 @@ export const startSession = Effect.fn("startSession")(function* (
     return yield* Effect.callback<Session, Error>((resume) => {
       let child: ChildProcess;
       try {
-        child = spawn(process.execPath, [...(compiled ? [] : [entry]), "__session", id, name, ...args], {
+        child = spawn(process.execPath, [...(compiled ? [] : ["--no-env-file", entry]), "__session", id, name, ...args], {
           detached: true, stdio: ["ignore", log.fd, log.fd, "ipc"],
         });
       } catch (error) {

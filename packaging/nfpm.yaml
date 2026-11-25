@@ -1,7 +1,7 @@
 name: prex
 arch: ${PREX_ARCH}
 version: ${PREX_VERSION}
-maintainer: JackatDJL
+maintainer: jkxrx
 description: Reserve free local ports and manage development previews.
 homepage: https://prex.djl.foundation
 section: devel

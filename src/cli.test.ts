@@ -22,7 +22,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { parseArgs } from "./cli.js";
 
 const cli = process.env.PREX_TEST_BINARY ?? join(import.meta.dir, "cli.ts");
-const executable = process.env.PREX_TEST_BINARY ? [cli] : [process.execPath, cli];
+const executable = process.env.PREX_TEST_BINARY ? [cli] : [process.execPath, "--no-env-file", cli];
 const child = (source: string) => [process.execPath, "-e", source, "--"];
 const server = "Bun.listen({hostname:'127.0.0.1',port:Number(process.env.PORT),socket:{data(){}}})";
 
@@ -277,4 +277,12 @@ integration("managed upgrade downloads the installer and streams it to bash with
   assert.deepEqual(defaultChannel, { code: 12, stdout: `--nightly ${root}\n`, stderr: "" });
   const stable = yield* launch([...child(script), "--stable"], options);
   assert.deepEqual(stable, { code: 12, stdout: `--stable ${root}\n`, stderr: "" });
+}));
+
+integration("executable shell scripts preserve arguments and only inherit caller environment", Effect.gen(function* () {
+  const { fs, root, ok } = yield* fixture();
+  yield* fs.writeFileString(join(root, ".env"), "PREX_DOTENV_TEST=local\n");
+  yield* fs.writeFileString(join(root, "plain"), 'printf "%s|%s|%s|%s\\n" "$0" "${PREX_DOTENV_TEST-unset}" "$1" "$2"\n', { mode: 0o700 });
+  assert.equal(yield* ok(["--", "./plain", "feature A", ""]), "./plain|unset|feature A|\n");
+  assert.equal(yield* ok(["--", "plain", "feature A", ""], { env: { PATH: root + ":" + process.env.PATH } }), `${join(root, "plain")}|unset|feature A|\n`);
 }));

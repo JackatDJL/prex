@@ -46,7 +46,7 @@ jobs:
           mkdir -p .artifacts
           target="bun-${{ matrix.target }}"
           if [[ "$target" == bun-linux-x64 ]]; then target=bun-linux-x64-baseline; fi
-          bun build --compile --target="$target" --define PREX_COMPILED=true src/cli.ts --outfile ".artifacts/prex-${{ matrix.target }}"
+          bun build --compile --no-compile-autoload-dotenv --target="$target" --define PREX_COMPILED=true src/cli.ts --outfile ".artifacts/prex-${{ matrix.target }}"
           cd .artifacts
           sha256sum "prex-${{ matrix.target }}" > "prex-${{ matrix.target }}.sha256"
       - uses: actions/upload-artifact@v4

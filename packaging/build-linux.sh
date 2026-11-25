@@ -20,7 +20,7 @@ esac
 output="${1:-.artifacts/linux}"
 mkdir -p "$PREX_STAGE" "$output"
 
-bun build --compile --target="$target" --define PREX_COMPILED=true src/cli.ts --outfile "$PREX_STAGE/prex"
+bun build --compile --no-compile-autoload-dotenv --target="$target" --define PREX_COMPILED=true src/cli.ts --outfile "$PREX_STAGE/prex"
 
 # nFPM does not expand environment variables in content paths.
 sed -e 's|${PREX_STAGE}|'"$PREX_STAGE"'|g' -e 's|${PREX_VERSION}|'"$PREX_VERSION"'|g' \
