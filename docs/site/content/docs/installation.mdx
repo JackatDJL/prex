@@ -17,7 +17,7 @@ Der Shell-Installer braucht einen veröffentlichten Binary-Build. Wenn im Downlo
 
 ```sh
 curl -fsSL https://prex.djl.foundation/install | bash
-export PATH="$HOME/.prex/bin:$PATH"
+# Öffne danach ein neues Terminal.
 prex --help
 ```
 
@@ -31,7 +31,7 @@ less prex-install.sh
 bash prex-install.sh
 ```
 
-Der Standardpfad ist `~/.prex/bin/prex`. Der Installer schreibt nicht in deine Shell-Konfiguration. Trage den Pfad in die Startdatei deiner Shell ein, wenn neue Terminals den Befehl automatisch finden sollen. Verwende `command -v prex`, wenn mehrere Installationen vorhanden sind. Der erste Eintrag im `PATH` entscheidet, welche Binary tatsächlich startet.
+Der Standardpfad ist `~/.prex/bin/prex`. Der Installer ergänzt den PATH in `.zshrc` oder `.bashrc`, je nach Login-Shell. Ein erneuter Aufruf fügt denselben Eintrag nicht noch einmal hinzu. Öffne ein neues Terminal oder lade die angezeigte Datei mit `source`. Bei anderen Shells gibt der Installer den PATH-Befehl zum Kopieren aus. Verwende `command -v prex`, wenn mehrere Installationen vorhanden sind. Der erste Eintrag im `PATH` entscheidet, welche Binary tatsächlich startet.
 
 Mit `PREX_INSTALL` kannst du einen anderen Installationsordner wählen. Verwende denselben Wert auch bei späteren Aufrufen von `prex upgrade`, damit Prex den Kanal und den Pfad der verwalteten Installation findet. Verwende pro Installationsordner jeweils nur einen Update-Vorgang gleichzeitig.
 

@@ -9,13 +9,13 @@ The installer supports Linux and macOS on x64 and ARM64. It requires Bash, curl 
 
 ```sh
 curl -fsSL https://prex.djl.foundation/install | bash
-export PATH="$HOME/.prex/bin:$PATH"
+# Open a new terminal after installation.
 prex --help
 ```
 
 The installer downloads the binary and SHA-256 file from one release. It checks the hash before replacing your current executable. This detects corrupt or mismatched files. The hash comes from the same release as the binary and does not independently authenticate the publisher. You can download the installer to a file and read it before running it.
 
-The default destination is `~/.prex/bin/prex`. The installer prints the PATH entry and leaves shell startup files alone. If you set `PREX_INSTALL` to use a different destination, keep that variable set when upgrading. Run one installer at a time per destination. Use `command -v prex` to check which installation your terminal finds.
+The default destination is `~/.prex/bin/prex`. The installer adds the binary directory to PATH in `.zshrc` or `.bashrc`, depending on your login shell. Reinstalling does not duplicate the entry. Open a new terminal or source the file printed by the installer. For other shells, it prints the PATH command. If you set `PREX_INSTALL` to use a different destination, keep that variable set when upgrading. Run one installer at a time per destination. Use `command -v prex` to check which installation your terminal finds.
 
 ## Change the update channel
 

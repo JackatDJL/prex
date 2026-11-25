@@ -23,6 +23,7 @@ case "$(uname -m)" in
 esac
 
 root=${PREX_INSTALL:-"$HOME/.prex"}
+case "$root" in /*) ;; *) root="$PWD/$root" ;; esac
 mkdir -p "$root/bin"
 tmp=$(mktemp -d "$root/.install.XXXXXXXX")
 trap 'rm -rf "$tmp"' EXIT
@@ -51,4 +52,24 @@ printf '%s\n' "$channel" > "$tmp/channel"
 mv -f "$tmp/$asset" "$root/bin/prex"
 mv -f "$tmp/channel" "$root/channel"
 printf 'Installed Prex (%s) at %s/bin/prex\n' "$channel" "$root"
-printf 'Add this directory to PATH: %s/bin\n' "$root"
+case "${SHELL:-}" in
+  zsh|*/zsh) rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
+  bash|*/bash) rc="$HOME/.bashrc" ;;
+  *) rc= ;;
+esac
+
+printf -v path_line 'export PATH=%q:"$PATH"' "$root/bin"
+if [[ -n "$rc" ]]; then
+  if [[ -f "$rc" ]] && grep -Fxq -- "$path_line" "$rc"; then
+    printf 'PATH is already configured in %s\n' "$rc"
+  elif printf '\n# Prex\n%s\n' "$path_line" >> "$rc"; then
+    printf 'Added Prex to PATH in %s\n' "$rc"
+  else
+    rc=
+  fi
+fi
+if [[ -n "$rc" ]]; then
+  printf 'Open a new terminal or run: source %q\n' "$rc"
+else
+  printf 'Add Prex to PATH: %s\n' "$path_line"
+fi
