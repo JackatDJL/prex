@@ -57,6 +57,7 @@ body { font-family: system-ui, sans-serif; }
   outline: 2px solid var(--color-fd-primary);
   outline-offset: 3px;
 }
+.landing :focus-visible { outline-color: #335220; }
 .landing .install-command :focus-visible { outline-color: #c7fa69; }
 .port-map div { flex-wrap: wrap; white-space: normal; }
 .port-map code { overflow-wrap: anywhere; }
