@@ -18,36 +18,82 @@
 @import 'fumadocs-ui/css/preset.css';
 
 body { font-family: system-ui, sans-serif; }
-.landing { background: #f8f6ef; color: #201d29; min-height: 100vh; }
+.landing { background: #f6f5ef; color: #171b20; min-height: 100vh; }
 .masthead, .section-wrap { width: min(100% - 2.5rem, 72rem); margin-inline: auto; }
 .masthead, .masthead nav, .wordmark, .hero-links { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.masthead { justify-content: space-between; padding-block: 1.125rem; border-bottom: 1px solid #c9c3d0; }
+.masthead { justify-content: space-between; padding-block: 1.125rem; border-bottom: 1px solid #d4d9cc; }
 .wordmark { font-size: 1.35rem; font-weight: 800; }
 .hero { text-align: center; padding: clamp(3rem, 9vw, 7rem) 1.25rem; }
 .hero h1 { max-width: 15ch; margin: auto; font-size: clamp(2.7rem, 8vw, 6.9rem); line-height: .94; letter-spacing: -.075em; font-weight: 850; }
 .hero p { max-width: 56ch; margin: 1.65rem auto; font-size: 1.12rem; line-height: 1.65; }
 .hero-links { justify-content: center; margin-top: 1.5rem; }
-.install-command { display: inline-flex; max-width: 100%; align-items: center; gap: 1rem; flex-wrap: wrap; justify-content: center; padding: .8rem 1rem; background: #211e2c; color: #f9eeff; border-radius: .55rem; }
+.install-command { display: inline-flex; max-width: 100%; align-items: center; gap: 1rem; flex-wrap: wrap; justify-content: center; padding: .8rem 1rem; background: #171b20; color: #f6f5ef; border-radius: .55rem; }
 .install-command code { overflow-wrap: anywhere; }
-.install-command button { padding: .35rem .65rem; border: 1px solid #a899b8; border-radius: .3rem; cursor: pointer; }
-.button { padding: .65rem 1rem; background: #302341; color: white; border-radius: .4rem; font-weight: 700; }
-.port-section { background: #e9d9fd; }
+.install-command button { padding: .35rem .65rem; border: 1px solid #889383; border-radius: .3rem; cursor: pointer; }
+.button { padding: .65rem 1rem; background: #233521; color: white; border-radius: .4rem; font-weight: 700; }
+.port-section { background: #e8f3d5; }
 .split, .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(1.5rem, 5vw, 5rem); align-items: center; padding-block: clamp(2.5rem, 7vw, 5rem); }
 .landing h2 { font-weight: 800; letter-spacing: -.045em; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1; }
 .split p, .feature-grid p { margin-block: 1rem; line-height: 1.65; }
 .split a, .feature-grid a { text-decoration: underline; text-underline-offset: .2em; }
-.port-map, .terminal { background: #211e2c; color: #f9eeff; padding: clamp(1rem, 3vw, 2rem); border-radius: .55rem; margin: 0; min-width: 0; overflow: auto; }
-.port-map figcaption { margin-bottom: 1rem; color: #dbc5f1; }
+.port-map, .terminal { background: #171b20; color: #f6f5ef; padding: clamp(1rem, 3vw, 2rem); border-radius: .55rem; margin: 0; min-width: 0; overflow: auto; }
+.port-map figcaption { margin-bottom: 1rem; color: #c7fa69; }
 .port-map div { display: flex; justify-content: space-between; gap: .5rem; white-space: nowrap; padding-block: .6rem; }
 .terminal { line-height: 1.65; }
-.feature-grid { border-top: 1px solid #c9c3d0; align-items: start; }
+.feature-grid { border-top: 1px solid #d4d9cc; align-items: start; }
 .landing a:hover { text-decoration: underline; }
 @media (max-width: 720px) { .split, .feature-grid { grid-template-columns: minmax(0, 1fr); } }
 
-:root { --color-fd-primary: #52377c; --color-fd-accent: #eee6fa; }
-.dark { --color-fd-primary: #d8bcff; --color-fd-accent: #2c233e; }
-.prex-docs article { font-size: 1.04rem; }
+:root { --color-fd-primary: #335220; --color-fd-accent: #ebf3dd; }
+.dark { --color-fd-primary: #c7fa69; --color-fd-accent: #283422; }
+.prex-docs [data-layout-content] { min-width: 0; }
+.prex-docs .prose { font-size: 1.04rem; line-height: 1.75; overflow-wrap: anywhere; }
 .prex-docs article h1 { letter-spacing: -.045em; }
 .prex-docs article h2 { margin-top: 2.6rem; letter-spacing: -.025em; }
 .prex-docs article pre { tab-size: 2; }
 .docs-language { align-self: flex-end; font-size: .875rem; color: var(--color-fd-primary); text-decoration: underline; text-underline-offset: .25em; }
+
+.landing :focus-visible, .prex-docs :focus-visible {
+  outline: 2px solid var(--color-fd-primary);
+  outline-offset: 3px;
+}
+.landing .install-command :focus-visible { outline-color: #c7fa69; }
+.port-map div { flex-wrap: wrap; white-space: normal; }
+.port-map code { overflow-wrap: anywhere; }
+
+.prex-flow {
+  margin-block: 1.75rem;
+  padding: clamp(1rem, 4vw, 1.5rem);
+  border: 1px solid var(--color-fd-border);
+  border-radius: .75rem;
+  background: var(--color-fd-card);
+}
+.prex-flow figcaption { margin: 0 0 .85rem; color: var(--color-fd-foreground); font-weight: 650; }
+.prex-flow ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: .65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: flow;
+}
+.prex-flow li {
+  position: relative;
+  margin: 0;
+  padding: .55rem .65rem .55rem 1.8rem;
+  border-radius: .45rem;
+  background: var(--color-fd-accent);
+  color: var(--color-fd-foreground);
+  font-size: .875rem;
+  line-height: 1.45;
+  counter-increment: flow;
+}
+.prex-flow li::before {
+  content: counter(flow);
+  position: absolute;
+  inset-inline-start: .65rem;
+  color: var(--color-fd-primary);
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+}
