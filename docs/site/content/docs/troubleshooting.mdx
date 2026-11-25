@@ -1,0 +1,61 @@
+---
+title: Fehlersuche
+description: Leere Session-Listen, falsche Ports, Startfehler und Tailscale untersuchen.
+---
+
+## Die Anwendung läuft, aber die Liste ist leer
+
+`prex list` liest die von Prex gestarteten Hintergrund-Sessions für deinen Benutzer. Es durchsucht keine Betriebssystemprozesse und übernimmt keine Session eines anderen Preview-Managers. `prex run` startet im Vordergrund und bleibt ebenfalls aus der Liste. Verwende für einen dauerhaften Eintrag `prex start --name <name> -- <befehl>`.
+
+Wenn der richtige Startbefehl verwendet wurde, vergleiche zuerst Benutzer und `XDG_STATE_HOME` in den beiden Terminals. Ein Container, SSH-Host oder ein anderer Unix-Benutzer hat in der Regel einen eigenen Zustandsspeicher. Führe `prex list --json` in derselben Umgebung aus, in der du die Session gestartet hast. Die Ausgabe zeigt auch das Arbeitsverzeichnis und macht ähnlich benannte Starts unterscheidbar.
+
+Bei einer lokalen Bun-Abhängigkeit heißt das ausführbare Kommando `prex`, auch wenn das Paket `@jkxrx/prex` heißt:
+
+```sh
+bunx --package=@jkxrx/prex -- prex list
+```
+
+## Prex meldet einen Port, der Server lauscht woanders
+
+Starte zuerst im Vordergrund. Dann kannst du die Prex-Ausgabe mit der Ausgabe des Dev-Servers vergleichen:
+
+```sh
+prex run -- node -p 'process.env.PREX_PORT'
+```
+
+Die Ausgabe zeigt, dass die Variable im Kindprozess existiert. Ein beliebiger Server liest sie nicht automatisch. Wenn das Framework seinen Port nur über Argumente akzeptiert, setze ihn im Projekt-Script direkt auf `{{port.web}}`. Wenn du einen Wrapper verwendest, lies `PREX_PORT` im Wrapper aus und übergib ihn dort an den eigentlichen Prozess.
+
+Prüfe auch den Host. `127.0.0.1` ist IPv4-Loopback. Ein Dienst, der ausschließlich auf `::1` lauscht, kann auf derselben Portnummer erreichbar sein, ohne auf die von Prex ausgegebene IPv4-Adresse zu antworten. Verwende im Startbefehl einen expliziten Host, wenn die Voreinstellung des Frameworks unklar ist.
+
+## Der Start wartet oder bricht ab
+
+Eine Hintergrund-Session wartet beim Start auf Ports. Prüfe das Log, dessen Pfad Prex beim Fehler ausgibt. Zwei häufige Fälle sehen von außen ähnlich aus:
+
+| Beobachtung | Nächster Schritt |
+| --- | --- |
+| Der Prozess beendet sich sofort | Ersten Fehler im Log lesen. Syntax, fehlende Abhängigkeiten und Konfiguration prüfen. |
+| Der Prozess läuft und Prex wartet | Prüfen, ob der Prozess auf jedem reservierten Port und auf IPv4 lauscht. |
+| TCP ist offen, Browser zeigt einen Fehler | HTTP-Status und Anwendungslog prüfen. Eine offene Verbindung kann auch HTTP 500 liefern. |
+| Ein Port kann nicht reserviert werden | Konfigurierten Bereich, parallel laufende Starts und belegte Ports prüfen. |
+
+Bei einem Start mit zwei Rollen reicht es nicht, wenn nur die App lauscht. Wird Vite optional gestartet, braucht der entsprechende Startbefehl entweder beide aktiven Prozesse oder eine eigene Ein-Port-Konfiguration. Hintergrundprozesse sollten außerdem keine blockierenden Fragen an ein Terminal stellen.
+
+## Portbereich zu klein
+
+Vergleiche die Größe des Bereichs mit der Anzahl gleichzeitiger Starts. Ein Bereich mit zwei Portnummern reicht genau für einen Start, der zwei Ports benötigt, und nur wenn keine anderen Dienste diese Ports belegen. Gib dem Bereich Luft für Prozesse außerhalb von Prex. Du findest die Syntax unter [Konfiguration](/docs/configuration/).
+
+Verwende zum Eingrenzen zuerst eine einzelne Rolle. Wenn diese klappt, erhöhe die Zahl schrittweise. Ein größerer Bereich hilft bei Konkurrenz, behebt aber keinen Server, der stur an einem festen Port lauscht.
+
+## Die App lädt, aber CSS oder HMR fehlen
+
+Wenn Laravel die Seite rendert, prüfe als Nächstes die Vite-Adresse, die im HTML steckt. Ein Worktree kann eine alte Hot-Datei enthalten, die auf einen anderen Vite-Server verweist. Nutze bei parallelen Läufen einen eigenen Hot-Dateipfad pro Session und gib ihn an Laravel und Vite weiter. Danach prüfe `/@vite/client` direkt am erwarteten Port. Der HTTP-Status der Hauptseite sagt nichts über diese zweite Anfrage aus.
+
+HMR benötigt zusätzlich eine Verbindung zum Vite-Server. Wenn du über eine Weiterleitung zugreifst, prüfe, ob der Browser die veröffentlichte Adresse und den passenden Port verwendet. Eine vom Desktop erreichbare Loopback-Adresse ist auf dem Mobilgerät eine andere Maschine.
+
+## Tailscale-URL fehlt oder öffnet sich nicht
+
+Prüfe die lokale URL zuerst. Danach prüfe, ob die Session mit `-t` gestartet wurde, Tailscale auf dem Host läuft und das Zielgerät im erlaubten Tailnet ist. Eine QR-Grafik enthält nur die URL. Sie gibt dem Gerät keine Zugriffsrechte und aktiviert keine Weiterleitung. Wenn keine Tailscale-URL vorhanden ist, führt ein QR-Code für `127.0.0.1` auf dem Smartphone zurück zum Smartphone.
+
+## Fehler nachvollziehbar melden
+
+Nenne die Prex-Version oder den Release-Commit, den Startbefehl, den Portbereich, die Plattform und die kürzeste Logstelle, die den Fehler enthält. Bei mehreren Diensten liste auf, welcher Port zu welcher Rolle gehört. Entferne Zugangsdaten und interne URLs aus Logs, bevor du sie weitergibst. Ein minimales Beispiel mit demselben Fehler hilft bei der Diagnose mehr als ein vollständiges Umgebungsabbild.

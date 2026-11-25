@@ -1,0 +1,39 @@
+---
+title: Project and user configuration
+description: Define named commands, port roles, and the range shared by your local Prex processes.
+---
+
+## Set a port range
+
+Prex defaults to TCP ports 41000 through 41999 inclusive. Place the following JSON in `$XDG_CONFIG_HOME/prex/config.json`, or in `~/.config/prex/config.json` when the environment variable is unset:
+
+```json
+{ "version": 1, "ports": { "min": 41000, "max": 41999 } }
+```
+
+Size the range for the total number of simultaneous ports across applications, plus spare capacity for ports that other processes already own. A two-port project needs two distinct free ports. Choosing a wider range does not change a server that ignores its assigned port.
+
+## Define a project script
+
+Add `config/prex.toml` under your project root. Prex searches from the current working directory upward, picks the first matching file and runs that script from the directory containing `config/`.
+
+```toml
+version = 1
+
+[scripts.web]
+ports = ["web"]
+command = ["bun", "run", "dev", "--host", "{{host}}", "--port", "{{port.web}}", "--strictPort"]
+
+[scripts.stack]
+ports = ["api", "web"]
+command = ["node", "tools/start-stack.mjs"]
+env = { API_URL = "http://{{host}}:{{port.api}}" }
+```
+
+Run `prex web` in the foreground, or `prex start --name web-dev web` for a managed session. The web command above assumes your project defines a Vite-backed `dev` script. The stack command assumes you have written the indicated runner. It receives `PREX_PORT_API`, `PREX_PORT_WEB` and `API_URL` and has to start both services itself.
+
+## What expands where?
+
+Prex substitutes `{{host}}` with `127.0.0.1` and replaces `{{port.role}}` with the allocated port. Placeholders work within command arguments and the values of `env`. Named ports also appear as `PREX_PORT_<ROLE>`. The simple invocation supplies `PORT`, `PREX_PORT`, `PREX_HOST` and numbered values such as `PREX_PORT_2`. A project script may declare up to five unique roles or omit ports entirely for a command that does not listen.
+
+Prex passes an argument array to the child process. There is no implicit shell expansion of pipes, redirects or variable references. If you need shell logic, put it in a script and invoke it explicitly. Keep the final bind command easy to find so that people can trace the assigned port through your runner.

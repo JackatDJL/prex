@@ -1,0 +1,12 @@
+---
+title: Agent skill
+description: Give coding agents the same preview commands and verification steps.
+---
+
+The Prex skill explains how to start a preview, check its URL and clean it up. The docs build exports its source under the Agent Skills discovery path. Install from the hosted site if it is available:
+
+```sh
+npx skills add https://prex.djl.foundation --skill prex
+```
+
+For a checkout with access to the source, use `npx skills add . --skill prex` from the repository root. Ask the agent to read your project's preview instructions before it starts anything. It should report which tool owns the session, the URL that actually responded and the command that stops it. If you have several worktrees open, include the worktree path when comparing results.

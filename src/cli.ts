@@ -1,4 +1,20 @@
 #!/usr/bin/env node
+/**
+ * Prex
+ *
+ * @description Preview manager extended
+ * @author Jack Ruder <jack@djl.foundation>
+ * @copyright 2026 Jack Ruder
+ * @see https://jack.djl.foundation
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+import { compiled, upgrade } from "./upgrade.js";
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { createConnection } from "node:net";
@@ -33,6 +49,7 @@ const usage = `Usage:
   prex start [options] -- <program> [arguments…]
   prex status|stop [NAME|ID] [--json]
   prex list|stop-all [--json]
+  prex upgrade [--stable | --nightly]
   prex qr|qri [NAME|ID|URL] [-i|--image] [--json]
 
 Options:
@@ -314,6 +331,7 @@ async function manage(action: string, args: readonly string[]): Promise<number> 
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const [action, ...args] = argv;
+  if (action === "upgrade") return upgrade(args);
   if (action === "__session") {
     const [id, name, ...raw] = args;
     return runSession(id, name, (signal, ready) => run(parseArgs(raw), true, { signal, ready }));
@@ -328,7 +346,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   }
   if (background) {
     const name = options.name ?? options.command[0];
-    const session = await startSession(fileURLToPath(import.meta.url), raw, name);
+    const session = await startSession(fileURLToPath(import.meta.url), raw, name, compiled);
     if (!options.json) printSessions([session], false, false);
     const qr = options.qr || options.image ? await renderQr(preferredUrl(session.urls), Boolean(options.image)) : undefined;
     if (options.json) process.stdout.write(JSON.stringify({ ...session, ...qr }) + "\n");
@@ -339,7 +357,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   return run(options, action !== "run");
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
+if (compiled || (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1]))) {
   main().then((status) => {
     process.exitCode = status;
   }).catch((error: unknown) => {

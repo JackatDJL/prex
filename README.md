@@ -63,3 +63,7 @@ With access to the GitHub repo, use `npx skills add JackatDJL/prex --skill prex`
 ## Linux packages
 
 The **Publish Prex** GitHub Actions workflow builds `.deb`, `.rpm`, and `.pkg.tar.zst` packages from the same version as npm. It currently stores them as a GitHub Actions artifact in this private repository, so the files are available to maintainers with repository access. Public installs use npm for now. See the [Linux installation guide](docs/site/content/docs/linux.mdx).
+
+## License
+
+Prex is licensed under [GNU AGPL v3.0 or later](LICENSE). Copyright © 2026 Jack Ruder. [See the provenance notes](NOTICE.md) for the workflow references.

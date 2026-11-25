@@ -1,3 +1,18 @@
+/**
+ * Prex
+ *
+ * @description Preview manager extended
+ * @author Jack Ruder <jack@djl.foundation>
+ * @copyright 2026 Jack Ruder
+ * @see https://jack.djl.foundation
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
@@ -25,7 +40,7 @@ const statePath = () => join(process.env.XDG_STATE_HOME || join(homedir(), ".loc
 const sessionPath = (id: string) => join(statePath(), id);
 const socketPath = (id: string) => join(sessionPath(id), "control");
 
-export async function startSession(entry: string, args: readonly string[], name: string): Promise<Session> {
+export async function startSession(entry: string, args: readonly string[], name: string, compiled = false): Promise<Session> {
   const id = randomUUID().replaceAll("-", "").slice(0, 16);
   await mkdir(statePath(), { recursive: true, mode: 0o700 });
   await mkdir(sessionPath(id), { mode: 0o700 });
@@ -33,7 +48,7 @@ export async function startSession(entry: string, args: readonly string[], name:
   try {
     const log = await open(join(sessionPath(id), "output.log"), "wx", 0o600);
     try {
-      worker = spawn(process.execPath, [entry, "__session", id, name, ...args], {
+      worker = spawn(process.execPath, [...(compiled ? [] : [entry]), "__session", id, name, ...args], {
         detached: true, stdio: ["ignore", log.fd, log.fd, "ipc"],
       });
     } finally {

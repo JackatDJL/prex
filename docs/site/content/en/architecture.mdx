@@ -1,0 +1,53 @@
+---
+title: Architecture and lifecycle
+description: Trace a launch from command resolution through port allocation, readiness and cleanup.
+---
+
+## A worktree shares the host network
+
+Git gives each worktree a separate working directory. The operating system still sees the same listening sockets. When one server binds a port, another server cannot bind the same interface and port independently. A fallback port can keep the second process running, but other clients still need its actual address.
+
+Prex coordinates this choice across invocations. It treats the port as an input to the start command and keeps a local registry of managed background sessions.
+
+```text
+ CLI arguments or project script
+             │
+             ▼
+    Resolve command and roles
+             │
+             ▼
+    Probe loopback TCP ports ── conflict ── try another candidate
+             │
+             ▼
+    Record reservation ──────── collision ─ check owner and retry
+             │
+             ▼
+    Inject env and arguments
+             │
+             ▼
+    Launch child ─── exit ─── release the reservation
+```
+
+## How the pieces fit
+
+| Component | Responsibility |
+| --- | --- |
+| Command parser | Resolve CLI flags and preserve the child argument array. |
+| Project loader | Find and expand named scripts, port roles and environment overrides. |
+| Port allocator | Probe candidate ports and coordinate reservations among Prex processes. |
+| Worker | Run a background session, capture logs and respond to status and stop requests. |
+| Endpoint helpers | Construct local URLs and handle optional Tailscale forwarding and QR output. |
+
+The allocator opens a temporary TCP socket on IPv4 loopback to see whether a port is free. It publishes a reservation with an atomic file link. The file records ownership so other Prex processes can skip the port while the original owner still needs it. The probe socket closes just before launch because the child process needs to bind that port itself.
+
+A process that ignores Prex reservations can claim a port during that handoff. Binding the precise port and enabling a framework's strict-port option make this problem visible. A port can also be held by a live process after an unexpected exit. The allocator still probes that port before it considers it available.
+
+## What the registry knows
+
+A foreground run keeps the terminal attached to your command. A background run starts a separate worker, which reports progress to the launcher and records the session. The registered metadata supports commands such as `list`, `status`, `stop` and `qr`. The registry is per user state directory. It cannot identify a preview launched through a different process manager.
+
+The worker can check TCP readiness for each assigned port. Application-level checks belong in your runner or verification script. Laravel may respond with HTTP 500 even after its socket opens, and a separate Vite dev server has a separate readiness endpoint.
+
+## What stays with your project
+
+Prex does not isolate databases, filesystem writes or network namespaces. If two worktrees share a database or a cache directory, assigning them different HTTP ports will not separate their data. Configure those paths deliberately. For frameworks that write a port into a shared file, use a per-session file and pass that path to every service that reads or writes it.

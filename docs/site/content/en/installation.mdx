@@ -1,0 +1,44 @@
+---
+title: Installation and upgrades
+description: Choose the native binary or npm and switch between Stable and Nightly.
+---
+
+## Install the native binary
+
+The installer supports Linux and macOS on x64 and ARM64. It requires Bash, curl and a SHA-256 utility. A published binary must exist for the chosen channel. For a machine where Node.js 22 or later is already available, npm is an alternative.
+
+```sh
+curl -fsSL https://prex.djl.foundation/install | bash
+export PATH="$HOME/.prex/bin:$PATH"
+prex --help
+```
+
+The installer downloads the binary and SHA-256 file from one release. It checks the hash before replacing your current executable. This detects corrupt or mismatched files. The hash comes from the same release as the binary and does not independently authenticate the publisher. You can download the installer to a file and read it before running it.
+
+The default destination is `~/.prex/bin/prex`. The installer prints the PATH entry and leaves shell startup files alone. If you set `PREX_INSTALL` to use a different destination, keep that variable set when upgrading. Run one installer at a time per destination. Use `command -v prex` to check which installation your terminal finds.
+
+## Change the update channel
+
+```sh
+curl -fsSL https://prex.djl.foundation/install | bash -s -- --nightly
+prex upgrade
+prex upgrade --stable
+prex upgrade --nightly
+```
+
+Stable builds come from `prod`. The scheduled workflow checks `main` every three hours for a new Nightly build. An unchanged commit does not produce another release. Without a flag, `prex upgrade` follows the installed channel. A successful channel switch persists for later upgrades. Running preview processes continue with the version that launched them. Restart a session if you need it to use the new binary.
+
+```text
+main ── new commit? ── Bun build ── Nightly ──┐
+                                             ├── install/upgrade ── prex
+prod ─── approved change ── Bun build ── Stable ┘
+```
+
+## Install with npm
+
+```sh
+npm install -g @jkxrx/prex
+npm install -g @jkxrx/prex@latest
+```
+
+The second command updates a global npm installation. For a reproducible project setup, add a specific package version to dev dependencies and commit the lockfile. A compiled Prex binary includes its own runtime. Your dev commands still need their respective tools, such as PHP for Laravel or Node.js for some JavaScript projects.

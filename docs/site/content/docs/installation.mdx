@@ -1,0 +1,68 @@
+---
+title: Installieren und aktualisieren
+description: Native Binary, npm-Paket und die Kanäle Stable und Nightly.
+---
+
+## Welche Installation passt?
+
+| Installation | Voraussetzungen | Updates |
+| --- | --- | --- |
+| Shell-Installer | Linux oder macOS, Bash, curl und ein SHA-256-Werkzeug | `prex upgrade` |
+| npm | Node.js ab 22 und npm | `npm install -g @jkxrx/prex@latest` |
+| Projektspezifisch | Node.js und Paketmanager des Projekts | Version im Projekt und im Lockfile ändern |
+
+Der Shell-Installer braucht einen veröffentlichten Binary-Build. Wenn im Download-Repository noch kein Release für deinen Kanal existiert, verwende das npm-Paket. Das npm-Paket bringt JavaScript mit und braucht einen vorhandenen Node-Prozess. Die native Binary enthält die von Bun benötigte Laufzeit. Für einen gestarteten Befehl wie `php artisan serve` oder `npm run dev` brauchst du weiterhin die Werkzeuge dieses Projekts.
+
+## Mit dem Shell-Installer starten
+
+```sh
+curl -fsSL https://prex.djl.foundation/install | bash
+export PATH="$HOME/.prex/bin:$PATH"
+prex --help
+```
+
+Der Installer wählt Linux oder macOS und x64 oder ARM64 anhand des laufenden Systems. Er holt Binary und SHA-256-Datei aus demselben Release und vergleicht die Prüfsumme, bevor er die lokale Datei ersetzt. Wenn der Download oder der Vergleich scheitert, bleibt die bisherige Binary an ihrem Platz. Die Prüfsumme schützt gegen beschädigte oder nicht zusammenpassende Dateien. Sie ist keine unabhängige Signatur des Herausgebers.
+
+Wenn du den Installer vorab lesen willst, lade ihn als Datei herunter:
+
+```sh
+curl -fsSL https://prex.djl.foundation/install -o prex-install.sh
+less prex-install.sh
+bash prex-install.sh
+```
+
+Der Standardpfad ist `~/.prex/bin/prex`. Der Installer schreibt nicht in deine Shell-Konfiguration. Trage den Pfad in die Startdatei deiner Shell ein, wenn neue Terminals den Befehl automatisch finden sollen. Verwende `command -v prex`, wenn mehrere Installationen vorhanden sind. Der erste Eintrag im `PATH` entscheidet, welche Binary tatsächlich startet.
+
+Mit `PREX_INSTALL` kannst du einen anderen Installationsordner wählen. Verwende denselben Wert auch bei späteren Aufrufen von `prex upgrade`, damit Prex den Kanal und den Pfad der verwalteten Installation findet. Verwende pro Installationsordner jeweils nur einen Update-Vorgang gleichzeitig.
+
+## Stable und Nightly
+
+Stable wird aus `prod` gebaut. Nightly entsteht aus `main`, wenn der geplante Workflow einen neuen Commit gegenüber dem jüngsten Nightly-Release findet. Nightly kann daher auch tagsüber erscheinen oder bei unverändertem Stand ausfallen. Beide Kanäle verwenden dasselbe Namensschema für Plattformdateien, aber eigene Release-Tags.
+
+```sh
+curl -fsSL https://prex.djl.foundation/install | bash -s -- --nightly
+prex upgrade
+prex upgrade --stable
+prex upgrade --nightly
+```
+
+Ohne Flag liest `prex upgrade` den Kanal der verwalteten Installation. Ein Flag lädt den anderen Kanal und speichert erst nach erfolgreicher Installation die neue Wahl. Der Kanal ist ein Veröffentlichungsweg, keine Garantie, dass eine ältere Konfiguration von Nightly mit jeder Stable-Version verwendbar ist. Wenn du ein Experiment rückgängig machst, kontrolliere daher auch die Projekt-Konfiguration und die Startargumente.
+
+```text
+main ── Änderungen? ── Bun-Build ── Nightly-Release ──┐
+                                                      ├── Installer ── ~/.prex/bin/prex
+prod ─── Freigabe ──── Bun-Build ── Stable-Release ───┘                  ~/.prex/channel
+```
+
+## npm und CI
+
+```sh
+npm install -g @jkxrx/prex
+npx --yes --package @jkxrx/prex@0.1.0 prex --help
+```
+
+Für ein Projekt mit Lockfile ist eine lokale Dev-Abhängigkeit besser reproduzierbar. Die Teammitglieder benutzen dann dieselbe Version und können Änderungen im Lockfile prüfen. Ein globaler Installer eignet sich zum Experimentieren am eigenen Rechner. Wenn im CI eine bestimmte Version notwendig ist, installiere sie ausdrücklich und verlasse dich nicht auf den neuesten Kanal.
+
+## Aufräumen und neu beginnen
+
+Beende zuerst deine eigenen Prex-Sessions, wenn auch die darin laufenden Programme beendet werden sollen. Entferne dann die Binary und die Kanaldatei aus deinem Installationsordner. Konfiguration und Session-Zustand liegen in den jeweiligen XDG-Verzeichnissen. Du kannst die CLI austauschen, ohne deine Projekt-Scripts oder deinen Portbereich zu löschen. Bei einer npm-Installation übernimmt `npm uninstall -g @jkxrx/prex` die Entfernung des globalen Pakets.

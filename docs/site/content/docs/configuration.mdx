@@ -39,3 +39,24 @@ Starte die Scripts mit `prex signalling`, `prex web` oder `prex check`. Zusätzl
 `ports` enthält bis zu fünf eindeutige Rollen. Prex setzt `{{port.rolle}}` im Befehlsarray und in den String-Werten von `env` ein. `{{host}}` steht für `127.0.0.1`. Jede Rolle wird auch als Variable wie `PREX_PORT_SIGNALLING` übergeben. Ein Script ohne Rollen reserviert keine Ports. Das Signalling-Script muss die URL auswerten, damit es am zugewiesenen Port lauscht.
 
 Einzelne `prex`-Aufrufe haben eigene Reservierungen und Prozessumgebungen. Wenn auch der Webprozess die Signalling-URL braucht, definiere beide Rollen in **einem** Script und übergib beide Werte an einen gemeinsamen Startbefehl. Für eine Anwendung mit gemeinsam genutzten Laufzeitdateien siehe das [Portfolio-Profil](/docs/portfolio/).
+
+## Ein Rezept aus einem festen Port migrieren
+
+Beginne mit dem tatsächlichen Startbefehl. Wenn dein bisheriges Rezept `vite --port 5173` lautet, tausche zuerst nur den Port gegen `{{port.web}}` aus und setze `--strictPort`. Ein guter erster Versuch bindet explizit an `{{host}}`. Lass den Start im Vordergrund laufen, bis sowohl die Prex-Ausgabe als auch das Vite-Log denselben Port zeigen.
+
+Wenn das Projekt auch eine API hat, überprüfe die Adresse, die der Browser nutzt. Ein zweiter Port in der Liste startet keine API. Ein gemeinsamer Runner startet beide Dienste und reicht den API-Port an das Frontend weiter. Die Frontend-Konfiguration muss diese Variable wiederum auswerten. Bei Vite sind Variablen mit dem Präfix `VITE_` für Client-Code gedacht. Verwende dafür nur Werte, die im Browser sichtbar sein dürfen, etwa eine lokale URL.
+
+### Vertrag für einen gemeinsamen Runner
+
+1. Lies die benannten Variablen beim Start und melde fehlende oder ungültige Werte.
+2. Starte den Dienst, von dem der nächste abhängt. Warte auf seine tatsächliche Bereitschaft.
+3. Starte den zweiten Dienst mit dem vollständigen Satz an Adressen.
+4. Halte den Runner aktiv, solange seine Kinder laufen. Reiche SIGTERM weiter und beende die übrigen Prozesse, wenn ein Dienst unerwartet ausfällt.
+
+Bei einer Vite-App mit Laravel ist Vite zuerst sinnvoll. Die Hot-Datei muss die neue Asset-Adresse enthalten, bevor Laravel eine Seite mit den Dev-Assets rendert. Eine JSON-API hinter einer SPA kann hingegen zuerst die API starten und auf einen Health-Endpunkt warten.
+
+## Konfiguration gemeinsam nutzen
+
+Lege die TOML-Datei im Repository ab. Sie beschreibt das Startverhalten, unabhängig vom persönlichen Portbereich. Der Bereich in der Benutzerkonfiguration bleibt lokal. Halte Entwicklungsbefehle und Konfiguration zusammen im selben Commit. Sonst können alte Worktrees ein neues Rezept finden, das auf eine noch nicht vorhandene Variable oder ein neues Script verweist.
+
+Wenn ein Projekt mehrere Anwendungsordner hat, entscheide bewusst, wo die Konfiguration liegt. Ein Unterprojekt braucht eine eigene Datei, wenn sein Startverzeichnis und seine Abhängigkeiten sich vom Repo-Root unterscheiden. Prüfe im Session-Eintrag das Arbeitsverzeichnis, wenn ein Script zwar startet, aber die falsche Anwendung lädt.

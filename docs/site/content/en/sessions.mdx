@@ -1,0 +1,35 @@
+---
+title: Sessions and private sharing
+description: Keep development servers running, inspect their logs, and share a preview on your tailnet.
+---
+
+## Session commands
+
+| Command | What it does |
+| --- | --- |
+| `prex start --name web web` | Start a configured project script in a worker and register the session. |
+| `prex list --json` | List the sessions visible to the current user and state directory. |
+| `prex status web` | Show one session by name or ID. |
+| `prex stop web` | Ask the worker to terminate the session and clean up resources. |
+| `prex qr web` | Render a terminal QR code for the first URL. |
+| `prex qri web` | Write the QR code to a temporary PNG. |
+
+Use the unique ID from JSON in scripts. A name describes what you are working on and may be reused in different worktrees. The session record carries the working directory, start time, URLs and log path. Inspect that information before choosing which session to stop.
+
+## Readiness and cleanup
+
+Prex waits for the reserved ports before returning from a background launch. If one of several services never listens, the start can time out. The log path in the error message helps distinguish a crash from a bind mismatch. For a functional check, request an app endpoint after launch. A TCP connection by itself cannot tell you whether the page renders or the expected API handler is loaded.
+
+Stop sessions with Prex so the worker has a chance to release its ports and close any forwarding it owns. If you use an orchestration script to start two processes, make sure it handles shutdown and cleans up both.
+
+## Use Tailscale when you need another device
+
+```sh
+prex start --name web -t web
+prex status web
+prex qr web
+```
+
+With Tailscale available on the host, `-t` requests private Serve forwarding. The receiving device must be on an authorized tailnet. The printed tailnet URL is the entry point for that device. A localhost URL on your phone refers to the phone itself. A QR code contains a URL and cannot grant network access.
+
+When testing over a forwarding path, check the page and any secondary origins. A dev server may emit an asset origin or HMR WebSocket URL that still references loopback. Update that framework's dev settings if it needs to advertise the forwarded origin.

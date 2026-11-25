@@ -36,7 +36,7 @@ jobs:
           include-hidden-files: true
 
   npm:
-    if: github.ref == 'refs/heads/main' && inputs.publish_npm
+    if: github.ref == 'refs/heads/prod' && inputs.publish_npm
     needs: linux
     runs-on: ubuntu-latest
     permissions:

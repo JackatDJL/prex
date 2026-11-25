@@ -1,29 +1,17 @@
-import Link from 'next/link';
+/**
+ * Prex
+ *
+ * @description Preview manager extended
+ * @author Jack Ruder <jack@djl.foundation>
+ * @copyright 2026 Jack Ruder
+ * @see https://jack.djl.foundation
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
 
-export default function Home() {
-  return (
-    <div className="landing">
-      <header className="masthead">
-        <Link href="/" className="wordmark">
-          <img src="/icon.svg" width="30" height="30" alt="" /> Prex
-        </Link>
-        <nav aria-label="Hauptnavigation">
-          <Link href="/docs">Dokumentation</Link>
-          <a href="https://github.com/JackatDJL/prex">GitHub</a>
-        </nav>
-      </header>
-      <main className="hero">
-        <div>
-          <p className="product-name">Previews Extended</p>
-          <h1>Freie Ports für deine Dev-Server.</h1>
-          <p className="intro">Starte mehrere Projekte parallel. Prex findet freie Ports und übergibt sie als Umgebungsvariablen oder CLI-Argumente an deine Server.</p>
-          <Link href="/docs" className="button">Erste Schritte <span aria-hidden="true">↗</span></Link>
-        </div>
-        <div className="terminal" aria-label="Beispiel mit zwei benannten Projekt-Scripts">
-          <pre>{'$ prex signalling\nPrex-Ports: 41408\n\n$ prex web\nPrex-Ports: 41701'}</pre>
-          <Link href="/docs/configuration">Projekt-Scripts konfigurieren <span aria-hidden="true">→</span></Link>
-        </div>
-      </main>
-    </div>
-  );
-}
+import { Home } from './home';
+export default function Page() { return <Home />; }

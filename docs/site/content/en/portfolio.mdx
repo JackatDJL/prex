@@ -1,0 +1,18 @@
+---
+title: Laravel and Vite
+description: Start a Laravel and Vite stack with coordinated ports and isolated runtime files.
+---
+
+## Reserve the two endpoints together
+
+The built-in `portfolio` profile assigns `app` and `vite` together. Copy `examples/portfolio-runner.mjs` into your project under `scripts/prex-portfolio-runner.mjs`. Configure Vite to read `HOMEPAGE_PREVIEW_HOST`, `HOMEPAGE_PREVIEW_VITE_PORT`, `HOMEPAGE_PREVIEW_ENV_DIR` and `HOMEPAGE_PREVIEW_HOT_FILE`. Use the hot file path in the Laravel Vite plugin and honor the selected port with strict binding.
+
+```sh
+prex run --profile portfolio -- node scripts/prex-portfolio-runner.mjs
+```
+
+The runner starts Vite and waits for `/@vite/client`. Then it starts Laravel and checks `/up`. If your application uses a different readiness route, adapt the runner. Start in the foreground while setting this up. Move it into a managed session once both endpoints respond.
+
+## Keep the per-session paths together
+
+The two processes need to agree on the hot file because Vite writes its address there and Laravel reads it to generate asset URLs. Separate files prevent worktrees from overwriting each other's dev URLs. The profile also prepares an empty Vite env directory, and the runner disables Bun's automatic env file loading for the Vite launch. Configure any backend database or storage isolation in the project itself.

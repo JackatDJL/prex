@@ -1,21 +1,53 @@
+/**
+ * Prex
+ *
+ * @description Preview manager extended
+ * @author Jack Ruder <jack@djl.foundation>
+ * @copyright 2026 Jack Ruder
+ * @see https://jack.djl.foundation
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 
 body { font-family: system-ui, sans-serif; }
-.landing { min-height: 100svh; background: #101411; color: #eef3eb; }
-.masthead, .hero { width: min(100% - 3rem, 72rem); margin-inline: auto; }
-.masthead { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: 1.4rem; border-bottom: 1px solid #354136; }
-.masthead nav, .wordmark { display: flex; align-items: center; gap: clamp(.65rem, 2.5vw, 1.5rem); }
-.masthead nav { font-size: .875rem; color: #c1cbc0; }
-.wordmark { gap: .55rem; font-size: 1.15rem; font-weight: 750; }
-.hero { display: grid; grid-template-columns: 1.2fr .8fr; align-items: center; gap: clamp(2rem, 7vw, 7rem); padding-block: clamp(4rem, 12vh, 10rem); }
-.product-name { margin-bottom: 1rem; font: .875rem ui-monospace, monospace; color: #b1eba7; }
-.hero h1 { max-width: 11ch; font-size: clamp(3rem, 6.8vw, 6.25rem); line-height: .97; letter-spacing: -.065em; font-weight: 750; }
-.intro { margin-block: 1.65rem; max-width: 43ch; color: #c1cbc0; line-height: 1.7; }
-.button { display: inline-flex; gap: 1ch; padding: .75rem 1rem; border-radius: .4rem; background: #b1eba7; color: #152015; font-weight: 650; }
-.terminal { min-width: 0; overflow: auto; border: 1px solid #354136; border-radius: .6rem; background: #191f19; }
-.terminal pre { padding: 1.5rem; color: #d5f3cd; font-size: .9rem; line-height: 1.75; }
-.terminal a { display: block; padding: .9rem 1.5rem; border-top: 1px solid #354136; font-size: .85rem; }
+.landing { background: #f8f6ef; color: #201d29; min-height: 100vh; }
+.masthead, .section-wrap { width: min(100% - 2.5rem, 72rem); margin-inline: auto; }
+.masthead, .masthead nav, .wordmark, .hero-links { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
+.masthead { justify-content: space-between; padding-block: 1.125rem; border-bottom: 1px solid #c9c3d0; }
+.wordmark { font-size: 1.35rem; font-weight: 800; }
+.hero { text-align: center; padding: clamp(3rem, 9vw, 7rem) 1.25rem; }
+.hero h1 { max-width: 15ch; margin: auto; font-size: clamp(2.7rem, 8vw, 6.9rem); line-height: .94; letter-spacing: -.075em; font-weight: 850; }
+.hero p { max-width: 56ch; margin: 1.65rem auto; font-size: 1.12rem; line-height: 1.65; }
+.hero-links { justify-content: center; margin-top: 1.5rem; }
+.install-command { display: inline-flex; max-width: 100%; align-items: center; gap: 1rem; flex-wrap: wrap; justify-content: center; padding: .8rem 1rem; background: #211e2c; color: #f9eeff; border-radius: .55rem; }
+.install-command code { overflow-wrap: anywhere; }
+.install-command button { padding: .35rem .65rem; border: 1px solid #a899b8; border-radius: .3rem; cursor: pointer; }
+.button { padding: .65rem 1rem; background: #302341; color: white; border-radius: .4rem; font-weight: 700; }
+.port-section { background: #e9d9fd; }
+.split, .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(1.5rem, 5vw, 5rem); align-items: center; padding-block: clamp(2.5rem, 7vw, 5rem); }
+.landing h2 { font-weight: 800; letter-spacing: -.045em; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1; }
+.split p, .feature-grid p { margin-block: 1rem; line-height: 1.65; }
+.split a, .feature-grid a { text-decoration: underline; text-underline-offset: .2em; }
+.port-map, .terminal { background: #211e2c; color: #f9eeff; padding: clamp(1rem, 3vw, 2rem); border-radius: .55rem; margin: 0; min-width: 0; overflow: auto; }
+.port-map figcaption { margin-bottom: 1rem; color: #dbc5f1; }
+.port-map div { display: flex; justify-content: space-between; gap: .5rem; white-space: nowrap; padding-block: .6rem; }
+.terminal { line-height: 1.65; }
+.feature-grid { border-top: 1px solid #c9c3d0; align-items: start; }
 .landing a:hover { text-decoration: underline; }
-@media (max-width: 700px) { .hero { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .split, .feature-grid { grid-template-columns: minmax(0, 1fr); } }
+
+:root { --color-fd-primary: #52377c; --color-fd-accent: #eee6fa; }
+.dark { --color-fd-primary: #d8bcff; --color-fd-accent: #2c233e; }
+.prex-docs article { font-size: 1.04rem; }
+.prex-docs article h1 { letter-spacing: -.045em; }
+.prex-docs article h2 { margin-top: 2.6rem; letter-spacing: -.025em; }
+.prex-docs article pre { tab-size: 2; }
+.docs-language { align-self: flex-end; font-size: .875rem; color: var(--color-fd-primary); text-decoration: underline; text-underline-offset: .25em; }

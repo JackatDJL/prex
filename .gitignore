@@ -10,3 +10,6 @@ docs/site/*.tsbuildinfo
 docs/site/public/.well-known/agent-skills/
 
 .artifacts/
+
+/docs/site/public/install
+/.artifacts/

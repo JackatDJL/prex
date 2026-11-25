@@ -1,0 +1,30 @@
+---
+title: Troubleshooting
+description: Diagnose missing sessions, wrong URLs, startup failures and inaccessible previews.
+---
+
+## The page works but the session list is empty
+
+Check how the page was started. A preview launched by plain Vite, a project-specific manager or foreground `prex run` does not appear in `prex list`. Use `prex start` to register a new background session. When you know it was started through Prex, compare the Unix user and `XDG_STATE_HOME` used by each command.
+
+For Bun's package runner, give both the package and its executable name:
+
+```sh
+bunx --package=@jkxrx/prex -- prex list
+```
+
+## The printed port differs from the server log
+
+Check that the server accepts the injected variable or receives the port as an explicit argument. Look at the host as well as the port. IPv6 loopback `::1` and IPv4 loopback `127.0.0.1` can have different listeners. Use a strict-port option when available so a conflict does not silently redirect your process to another port.
+
+## A background process times out
+
+Read the reported log first. A crash before binding can come from missing packages, invalid configuration or a duplicate port. If the command is still alive, check every reserved port. A stack allocating two ports will not become ready while only one service listens. Run the same command in the foreground to see which process gets stuck.
+
+## HTTP or HMR fails after startup
+
+Request the specific HTTP endpoint and inspect the application log. If Laravel responds but Vite assets fail, inspect the Vite address embedded in the HTML. A stale hot file can point to the wrong worktree. For mobile access, check whether the browser needs a forwarded origin for assets and HMR as well as the application URL.
+
+## A QR code opens the wrong machine
+
+Inspect the URL inside the QR code. Loopback points to the device opening it. Use an active private Tailscale forwarding session when another device needs access. Check that device's tailnet access and verify that the server already responds on the host.

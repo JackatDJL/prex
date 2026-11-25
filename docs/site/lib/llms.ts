@@ -1,16 +1,32 @@
+/**
+ * Prex
+ *
+ * @description Preview manager extended
+ * @author Jack Ruder <jack@djl.foundation>
+ * @copyright 2026 Jack Ruder
+ * @see https://jack.djl.foundation
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { englishSource, source } from './source';
 
 const base = 'https://prex.djl.foundation';
 const pages = [
-  { slug: 'index', path: '/docs/', title: 'Erste Schritte' },
-  { slug: 'linux', path: '/docs/linux/', title: 'Linux-Pakete' },
-  { slug: 'sessions', path: '/docs/sessions/', title: 'Sessions und Freigabe' },
-  { slug: 'configuration', path: '/docs/configuration/', title: 'Konfiguration' },
-  { slug: 'just', path: '/docs/just/', title: 'Just' },
-  { slug: 'portfolio', path: '/docs/portfolio/', title: 'Portfolio mit Statamic' },
-  { slug: 'agents', path: '/docs/agents/', title: 'Agent-Skill' },
-];
+  ...source.getPages().map(page => ({ page, language: 'docs' })),
+  ...englishSource.getPages().map(page => ({ page, language: 'en' })),
+].map(({ page, language }) => ({
+  slug: page.slugs.join('/') || 'index',
+  path: page.url,
+  title: page.data.title,
+  language,
+}));
 
 const heading = '# Prex\n\n> Previews Extended assigns free local TCP ports to development commands, manages named background sessions, and can share them privately over Tailscale.\n';
 const skill = base + '/.well-known/agent-skills/prex/SKILL.md';
@@ -30,8 +46,8 @@ export function llmsIndex() {
 }
 
 export async function llmsFull() {
-  const docs = await Promise.all(pages.map(async ({ slug, title, path }) => {
-    const mdx = await readFile(join(process.cwd(), 'content', 'docs', slug + '.mdx'), 'utf8');
+  const docs = await Promise.all(pages.map(async ({ slug, title, path, language }) => {
+    const mdx = await readFile(join(process.cwd(), 'content', language, slug + '.mdx'), 'utf8');
     const body = mdx.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim()
       .replace(/\]\(\/(?!\/)/g, `](${base}/`);
     return `## ${title}\n\nSource: ${base}${path}\n\n${body}`;

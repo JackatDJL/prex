@@ -1,0 +1,8 @@
+---
+title: Linux packages
+description: Understand the difference between downloadable packages and package repositories.
+---
+
+The Linux packaging workflow can build DEB, RPM and Arch package files. These are currently workflow artifacts from the private source repository. Access to that repository is required to download the artifacts. Public installation uses npm or native binaries from a configured public release repository once those releases exist.
+
+A standalone package can be installed from a local path, for example with `apt install ./prex.deb`, `dnf install ./prex.rpm` or `pacman -U ./prex.pkg.tar.zst`. Replace the filenames with the actual downloads. Those commands install the selected file. They do not automatically add an update feed. Install later updates the same way, or use the native installer if you want Stable and Nightly channel switching.

@@ -11,6 +11,7 @@
   },
   "files": [
     "dist/cli.js",
+    "dist/upgrade.js",
     "dist/integrations.js",
     "dist/ports.js",
     "dist/project-config.js",
@@ -19,7 +20,8 @@
     "README.md",
     "assets/",
     "CHANGELOG.md",
-    "skills/prex/SKILL.md"
+    "skills/prex/SKILL.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -48,5 +50,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/JackatDJL/prex.git"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

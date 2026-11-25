@@ -1,0 +1,77 @@
+---
+title: Architektur und Lebenszyklus
+description: Wie Prex Ports reserviert, Befehle startet und Sessions verwaltet.
+---
+
+## Das Problem in zwei Worktrees
+
+Ein Worktree trennt Dateien und Abhängigkeiten, aber er hat keinen eigenen Netzwerk-Namespace. Wenn zwei Checkout-Kopien denselben Befehl starten und beide auf Port 3000 lauschen wollen, bekommt die zweite Kopie einen Bind-Fehler. Manche Dev-Server springen stattdessen automatisch auf einen anderen Port. Das ist für einen einzelnen Server bequem. Sobald dein Frontend die API-URL voraussetzt oder ein Test einen festen Einstiegspunkt erwartet, kann der automatische Wechsel aber den falschen Prozess treffen.
+
+Prex macht die Portwahl zum Teil des Startvorgangs. Du deklarierst, wie viele Server einen Port brauchen. Prex reserviert die Ports, übergibt sie an deinen Startbefehl und kann eine benannte Session führen. Die Anwendung muss die übergebenen Ports übernehmen. Ein explizites `--port` und ein Modus wie Vites `--strictPort` machen aus einem Bind-Fehler einen sichtbaren Startfehler.
+
+```text
+Worktree A ── prex start --name app-a ──┐
+                                       ├── Portvergabe (Loopback + Reservierung)
+Worktree B ── prex start --name app-b ──┘
+                    │
+          ┌─────────┴─────────────┐
+          │ PREX_PORT / Argument  │
+          └─────────┬─────────────┘
+                    ▼
+              Dein Dev-Server
+```
+
+## Die vier Schritte eines Starts
+
+| Schritt | Zuständig | Ergebnis |
+| --- | --- | --- |
+| Eingabe auflösen | CLI und Projektkonfiguration | Argumentliste, Portrollen und Umgebungsvariablen |
+| Ports wählen | Portvergabe | Reservierung im Zustandsspeicher und ein offener Test-Socket je Port |
+| Prozess starten | CLI oder Session-Worker | Dein Befehl läuft im Projektverzeichnis |
+| Ressourcen freigeben | CLI oder Session-Worker | Ports und temporäre Hilfsdateien werden aufgeräumt |
+
+### Eingabe auflösen
+
+Bei `prex run -- npm run dev` ist alles nach `--` der Kindbefehl. Prex ergänzt keine beliebigen Framework-Flags. Bei `prex web` sucht Prex in den übergeordneten Ordnern nach `config/prex.toml` und löst `web` dort auf. Der nächste Treffer bestimmt das Projektverzeichnis. Das ist in Monorepos wichtig: Eine Unteranwendung mit eigener Konfiguration kann andere Ports und Befehle definieren als das Repo im Ganzen.
+
+Ein Projekt-Script kann mehrere Ports mit Rollen versehen. Damit wird aus einer anonymen Position ein Name wie `app` oder `vite`. Du kannst dieselbe Rolle in Argumenten und in Umgebungsvariablen referenzieren. Beispiel: Das Backend bindet an den App-Port und Vite erhält dieselbe URL als erlaubten Origin. Beides kommt aus demselben Startvorgang.
+
+### Ports wählen
+
+Der Standardbereich ist 41000 bis 41999. Prex versucht, einen TCP-Socket auf IPv4-Loopback zu öffnen. Der Test prüft, ob das Betriebssystem den Port zu diesem Zeitpunkt freigibt. Anschließend veröffentlicht Prex über einen atomaren Dateilink einen Reservierungseintrag. Zwei Prex-Aufrufe verwenden dadurch dieselbe Vergaberegel und akzeptieren denselben Port nicht gleichzeitig.
+
+Der Socket muss geschlossen werden, bevor dein eigener Server denselben Port binden kann. Der Reservierungseintrag bleibt dabei bestehen. Ein Programm außerhalb von Prex kann trotzdem zwischen dem Schließen und dem nächsten Bind auf den Port zugreifen. Behandle die ausgegebene URL deshalb zuerst als erwartete Adresse und prüfe anschließend die Antwort der Anwendung. Prex kann den Netzwerk-Namespace des Systems nicht für Fremdprozesse sperren.
+
+```text
+┌ Kandidat aus dem konfigurierten Bereich ──┐
+│ TCP-Probe auf 127.0.0.1 erfolgreich?      │
+├ Ja ────────────────────────┬ Nein ────────┤
+│ Reservierung veröffentlichen│ Neu wählen │
+├ Eintrag bereits vorhanden? ┴─────────────┤
+│ Ja: Besitzer prüfen, erneut versuchen   │
+│ Nein: Reservierung bis Prozessende halten│
+└──────────────────────────────────────────┘
+```
+
+### Vordergrund und Hintergrund
+
+Im Vordergrund bleiben Ein- und Ausgabe an deinem Terminal. Das ist beim ersten Start am praktischsten, weil du Fehlermeldungen sofort siehst. Wähle den Vordergrund auch für Programme, die während der Ausführung Eingaben erwarten.
+
+Mit `prex start` startet Prex einen separaten Worker und schreibt die Ausgabe in ein Session-Log. Der Starter wartet auf eine Rückmeldung des Workers, bevor er URLs ausgibt. Startet dein Befehl mehrere Dienste, müssen diese die reservierten Ports tatsächlich öffnen. Ein bindender Port beweist dabei lediglich TCP-Erreichbarkeit. Prüfe für einen Anwendungstest zusätzlich die konkrete HTTP-Route, etwa `/up` oder `/@vite/client`.
+
+Pro Session speichert Prex Name, ID, Projektverzeichnis, URLs, Startzeit und Logpfad. `prex list` zeigt diesen Bestand. Für ein Tool, das nebenbei im selben Worktree läuft, gibt es keinen Eintrag. Verwende in Automatisierung die eindeutige ID aus `--json`, besonders wenn mehrere Worktrees denselben Session-Namen verwenden.
+
+### Signale und Aufräumen
+
+Verwende `prex stop <id>`, damit der Worker den Kindprozess und seine eigenen Ressourcen aufräumen kann. Ein hart beendeter Prozess kann keine Aufräumlogik mehr ausführen. Die Portvergabe prüft belegte Reservierungseinträge auf verwaiste Besitzer. Wenn ein anderer Prozess noch lauscht, bleibt der Port durch die Betriebssystemprüfung ausgeschlossen.
+
+## Grenzen des Modells
+
+- Loopback teilt dein Preview nicht mit anderen Geräten. Für andere Geräte im Tailnet musst du Tailscale bewusst aktivieren.
+- Eine Portrolle beschreibt einen Port. Sie startet keinen zweiten Prozess. Ein gemeinsamer Runner muss die Dienste selbst starten und aufräumen.
+- Eigene Dateien wie Datenbanken, Hot-Dateien und Caches brauchen weiterhin pro Worktree oder Session passende Pfade.
+- Eine laufende Session kann über eine ältere Binary gestartet worden sein. Beim Upgrade wird die Binary für zukünftige Aufrufe ersetzt. Die laufenden Dienste behalten ihren Prozesszustand.
+
+## Welche Stelle solltest du zuerst prüfen?
+
+Wenn der Start scheitert, prüfe die Kette in Reihenfolge. Läuft der eigentliche Befehl ohne Prex? Nimmt er den übergebenen Port an? Lauscht er auf dem erwarteten Host? Antwortet dann die gewünschte HTTP-Route? Jeder Schritt prüft eine andere Annahme. Wenn nur Tailscale fehlt, halte den lokalen Dienst zunächst konstant und prüfe die Weiterleitung separat. Im [Leitfaden zur Fehlersuche](/docs/troubleshooting/) findest du konkrete Befehle für diese Fälle.

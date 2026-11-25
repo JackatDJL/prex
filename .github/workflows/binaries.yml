@@ -1,0 +1,77 @@
+name: Prex binaries
+on:
+  schedule:
+    - cron: '17 */3 * * *'
+  push:
+    branches: [prod]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: prex-binaries-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  changes:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.check.outputs.publish }}
+      channel: ${{ steps.check.outputs.channel }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.PREX_DOWNLOAD_TOKEN || github.token }}
+          REPO: ${{ vars.PREX_DOWNLOAD_REPOSITORY || github.repository }}
+        run: |
+          set -euo pipefail
+          channel=nightly
+          if [[ "$GITHUB_REF_NAME" == prod ]]; then channel=stable; fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          previous=$(gh api "repos/$REPO/releases?per_page=100" --paginate --jq ".[] | select(.draft == false) | select(.tag_name | startswith(\"prex-$channel-\")) | .tag_name" | sed -n '1p')
+          if [[ "$previous" != "prex-$channel-$GITHUB_SHA" ]]; then echo publish=true >> "$GITHUB_OUTPUT"; fi
+  compile:
+    needs: changes
+    if: needs.changes.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux-x64, linux-arm64, darwin-x64, darwin-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: npm ci
+      - run: |
+          mkdir -p .artifacts
+          target="bun-${{ matrix.target }}"
+          if [[ "$target" == bun-linux-x64 ]]; then target=bun-linux-x64-baseline; fi
+          bun build --compile --target="$target" --define PREX_COMPILED=true src/cli.ts --outfile ".artifacts/prex-${{ matrix.target }}"
+          cd .artifacts
+          sha256sum "prex-${{ matrix.target }}" > "prex-${{ matrix.target }}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: .artifacts/*
+          if-no-files-found: error
+  release:
+    needs: [changes, compile]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
+      - env:
+          GH_TOKEN: ${{ secrets.PREX_DOWNLOAD_TOKEN || github.token }}
+          REPO: ${{ vars.PREX_DOWNLOAD_REPOSITORY || github.repository }}
+          CHANNEL: ${{ needs.changes.outputs.channel }}
+        run: |
+          set -euo pipefail
+          tag="prex-$CHANNEL-$GITHUB_SHA"
+          args=(--latest)
+          if [[ "$CHANNEL" == nightly ]]; then args=(--prerelease --latest=false); fi
+          if [[ "$REPO" == "$GITHUB_REPOSITORY" ]]; then args+=(--target "$GITHUB_SHA"); fi
+          gh release create "$tag" artifacts/* --repo "$REPO" "${args[@]}" --title "Prex $CHANNEL · ${GITHUB_SHA:0:12}" --notes "Source: https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA"

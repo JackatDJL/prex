@@ -1,0 +1,19 @@
+---
+title: Just recipes
+description: Give your team stable shortcuts while Prex owns port selection.
+---
+
+Keep role declarations and the underlying command in `config/prex.toml`. Use the Justfile for short aliases that the team can find with `just --list`.
+
+```just
+dev:
+    prex web
+
+preview:
+    prex start --name web web
+
+previews:
+    prex list
+```
+
+The `web` script must already exist in your project configuration. `dev` attaches to the terminal, while `preview` returns after the worker reports readiness. If several worktrees use this recipe, check the working directory in `prex list --json` and stop the intended session by ID.
