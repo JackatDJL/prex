@@ -286,3 +286,34 @@ integration("executable shell scripts preserve arguments and only inherit caller
   assert.equal(yield* ok(["--", "./plain", "feature A", ""]), "./plain|unset|feature A|\n");
   assert.equal(yield* ok(["--", "plain", "feature A", ""], { env: { PATH: root + ":" + process.env.PATH } }), `${join(root, "plain")}|unset|feature A|\n`);
 }));
+
+integration("version aliases report the package version", Effect.gen(function* () {
+  const { fs, ok } = yield* fixture();
+  const { version } = JSON.parse(yield* fs.readFileString(join(import.meta.dir, "../package.json")));
+  assert.equal(yield* ok(["-v"]), version + "\n");
+  assert.equal(yield* ok(["--version"]), version + "\n");
+}));
+
+integration("Effect log levels filter diagnostics and traces without changing child arguments or JSON", Effect.gen(function* () {
+  const { invoke } = yield* fixture();
+  const cmd = ["--json", "--", ...child("console.log(JSON.stringify(process.argv.slice(1)))"), "--loglevel", "ignore"];
+  const debug = yield* invoke(["run", "--loglevel", "debug", ...cmd]);
+  assert.equal(debug.code, 0, debug.stderr);
+  assert.equal(JSON.parse(debug.stdout).urls.length, 1);
+  assert.match(debug.stderr, /DEBUG.*Reserved preview ports/);
+  assert.match(debug.stderr, /\["--loglevel","ignore"\]/);
+  assert.doesNotMatch(debug.stderr, /"spanId":/);
+
+  const trace = yield* invoke(["--loglevel=Trace", "run", ...cmd]);
+  assert.equal(trace.code, 0, trace.stderr);
+  assert.equal(JSON.parse(trace.stdout).urls.length, 1);
+  const spans = trace.stderr.split("\n").filter((line) => line.startsWith('{"level":"TRACE"')).map((line) => JSON.parse(line));
+  assert.ok(spans.some((span) => span.span === "reservePorts" && span.traceId && span.durationMs >= 0));
+
+  const quiet = yield* invoke(["run", "--loglevel", "None", ...cmd]);
+  assert.equal(quiet.code, 0, quiet.stderr);
+  assert.equal(quiet.stderr, '["--loglevel","ignore"]\n');
+  const invalid = yield* invoke(["list", "--loglevel", "verbose"]);
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /--loglevel erwartet/);
+}));
