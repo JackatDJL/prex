@@ -14,7 +14,8 @@
  * (at your option) any later version.
  */
 
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, LogLevel, Logger, Option, References, Tracer } from "effect";
+import packageJson from "../package.json" with { type: "json" };
 import { FetchHttpClient } from "effect/http";
 import { BunServices } from "@effect/platform-bun";
 import { asError, attempt, task } from "./failure.js";
@@ -60,6 +61,8 @@ Options:
   -i, --image      Write a PNG QR to a temporary directory
   --ports N       Reserve 1 to 5 ports (default: integration-specific)
   --profile NAME  Select a project integration profile
+  --loglevel LEVEL  Effect diagnostics to stderr (All, Trace, Debug, Info, Warn, Error, Fatal, None)
+  -v, --version   Show the installed version
   -h, --help      Show this help
 
 The child process runs in the current directory with inherited standard streams.`;
@@ -205,6 +208,7 @@ const run = Effect.fn("run")(function* (
     });
     const reservation = prepared ? yield* reservePorts(prepared.count) : undefined;
     const ports = reservation?.ports ?? [];
+    yield* Effect.logDebug("Reserved preview ports", ports);
     if (!ports.length && (options.tailscale || options.qr || options.image)) {
       return yield* Effect.fail(new Error("Diese Option benötigt mindestens einen Port."));
     }
@@ -336,15 +340,88 @@ const manage = Effect.fn("manage")(function* (action: string, args: readonly str
   printSessions(sessions, json, bulk);
   return 0;
 });
-export const main = Effect.fn("main")(function* (argv: readonly string[]) {
+const managementCommands = ["status", "stop", "list", "stop-all", "qr", "QR", "qri"];
+
+function extractLogLevel(argv: readonly string[]) {
+  const args: string[] = argv[0] === "__session" ? argv.slice(0, 3) : [];
+  const firstOptionIndex = args.length;
+  let level: LogLevel.LogLevel | undefined;
+  let management = false;
+  for (let index = firstOptionIndex; index < argv.length; index++) {
+    const arg = argv[index];
+    if (arg === "--loglevel" || arg.startsWith("--loglevel=")) {
+      if (level) throw new Error("--loglevel darf nur einmal angegeben werden.");
+      const value = arg === "--loglevel" ? argv[++index] : arg.slice("--loglevel=".length);
+      level = LogLevel.values.find((candidate) => candidate.toLowerCase() === value?.toLowerCase());
+      if (!level) throw new Error(`--loglevel erwartet ${LogLevel.values.join(", ")}.`);
+      continue;
+    }
+    if (arg === "--") {
+      args.push(...argv.slice(index));
+      break;
+    }
+    if (args.length === 0 && (managementCommands.includes(arg) || arg === "upgrade")) {
+      management = true;
+    } else if (!management && !arg.startsWith("-") &&
+      !(args.length === 0 && (arg === "start" || arg === "run"))) {
+      args.push(...argv.slice(index));
+      break;
+    }
+    args.push(arg);
+    if (!management && ["--ports", "--profile", "--name"].includes(arg) && index + 1 < argv.length) {
+      args.push(argv[++index]);
+    }
+  }
+  return { args, level };
+}
+
+const stderrTracer = Tracer.make({
+  span(options) {
+    const span = Tracer.nativeTracer.span(options);
+    const end = span.end.bind(span);
+    span.end = (endTime, exit) => {
+      end(endTime, exit);
+      if (!span.sampled) return;
+      const parent = Option.getOrUndefined(span.parent);
+      process.stderr.write(JSON.stringify({
+        level: "TRACE",
+        span: span.name,
+        traceId: span.traceId,
+        spanId: span.spanId,
+        parentSpanId: parent?.spanId,
+        durationMs: Number(endTime - options.startTime) / 1e6,
+        outcome: exit._tag,
+      }) + "\n");
+    };
+    return span;
+  },
+});
+
+export const main = (argv: readonly string[]) => attempt(() => extractLogLevel(argv)).pipe(
+  Effect.flatMap(({ args, level }) => {
+    const program = execute(args, level).pipe(Effect.provideService(Logger.LogToStderr, true));
+    if (!level) return program;
+    return program.pipe(
+      Effect.provideService(References.MinimumLogLevel, level),
+      Effect.withTracer(level === "All" || level === "Trace" ? stderrTracer : Tracer.nativeTracer),
+    );
+  }),
+);
+
+const execute = Effect.fn("prex")(function* (argv: readonly string[], level?: LogLevel.LogLevel) {
   const [action, ...args] = argv;
+  yield* Effect.logDebug("Prex command dispatch");
+  if (argv.length === 1 && (action === "-v" || action === "--version")) {
+    process.stdout.write(packageJson.version + "\n");
+    return 0;
+  }
   if (action === "upgrade") return yield* upgrade(args);
   if (action === "__session") {
     const [id, name, ...raw] = args;
     return yield* runSession(id, name, (signal, ready) =>
       attempt(() => parseArgs(raw)).pipe(Effect.flatMap((options) => run(options, true, { signal, ready }))));
   }
-  if (["status", "stop", "list", "stop-all", "qr", "QR", "qri"].includes(action)) return yield* manage(action, args);
+  if (managementCommands.includes(action)) return yield* manage(action, args);
   const background = action === "start";
   const raw = background ? args : argv;
   const options = yield* attempt(() => parseArgs(raw));
@@ -354,7 +431,8 @@ export const main = Effect.fn("main")(function* (argv: readonly string[]) {
   }
   if (background) {
     const name = options.name ?? options.command[0];
-    const session = yield* startSession(fileURLToPath(import.meta.url), raw, name, compiled);
+    const workerArgs = level ? ["--loglevel", level, ...raw] : raw;
+    const session = yield* startSession(fileURLToPath(import.meta.url), workerArgs, name, compiled);
     if (!options.json) printSessions([session], false, false);
     const qr = options.qr || options.image ? yield* attempt(() => preferredUrl(session.urls)).pipe(Effect.flatMap((url) => renderQr(url, Boolean(options.image)))) : undefined;
     if (options.json) process.stdout.write(JSON.stringify({ ...session, ...qr }) + "\n");
