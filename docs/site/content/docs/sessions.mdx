@@ -5,6 +5,16 @@ description: Starte Previews im Vordergrund oder Hintergrund und teile ihre Adre
 
 ## Im Vordergrund und im Hintergrund
 
+<figure className="prex-flow">
+  <figcaption>Lebenszyklus einer Session</figcaption>
+  <ol role="list">
+    <li><code>start</code> startet den Worker.</li>
+    <li><code>list</code> zeigt die laufenden Sessions.</li>
+    <li><code>status</code> zeigt Details und Logpfad.</li>
+    <li><code>stop</code> beendet die Session.</li>
+  </ol>
+</figure>
+
 ```sh
 prex run -- bun run dev
 prex start --name frontend -- bun run dev

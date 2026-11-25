@@ -9,24 +9,15 @@ Git gives each worktree a separate working directory. The operating system still
 
 Prex coordinates this choice across invocations. It treats the port as an input to the start command and keeps a local registry of managed background sessions.
 
-```text
- CLI arguments or project script
-             │
-             ▼
-    Resolve command and roles
-             │
-             ▼
-    Probe loopback TCP ports ── conflict ── try another candidate
-             │
-             ▼
-    Record reservation ──────── collision ─ check owner and retry
-             │
-             ▼
-    Inject env and arguments
-             │
-             ▼
-    Launch child ─── exit ─── release the reservation
-```
+<figure className="prex-flow">
+  <figcaption>From worktree to dev server</figcaption>
+  <ol role="list">
+    <li>Resolve command and port roles</li>
+    <li>Reserve available ports</li>
+    <li>Pass ports to the launch command</li>
+    <li>Dev server binds the ports</li>
+  </ol>
+</figure>
 
 ## How the pieces fit
 

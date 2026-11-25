@@ -13,255 +13,154 @@
  * (at your option) any later version.
  */
 
-import { randomBytes, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { mkdir, link, readFile, unlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
+import { Effect, Exit, FileSystem, Path, Schema, Scope } from "effect";
+import { attempt, task } from "./failure.js";
 
-const DEFAULT_MIN = 41000;
-const DEFAULT_MAX = 41999;
-const MAX_PORT_COUNT = 5;
-const RESERVATION_PREFIX = "port-";
-const TEMP_PREFIX = ".reservation-";
+const Port = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65535 }));
+const Settings = Schema.Struct({
+  version: Schema.Literal(1),
+  ports: Schema.Struct({ min: Port, max: Port }),
+});
+const Reservation = Schema.Struct({
+  version: Schema.Literal(1),
+  pid: Schema.Int.check(Schema.isGreaterThan(0)),
+  runId: Schema.String,
+  port: Schema.Int,
+});
 
-type PortRange = { min: number; max: number };
-type Reservation = { version: 1; pid: number; runId: string; port: number };
-
-/** Reserve one to five independently selected IPv4 loopback TCP ports. */
-export async function reservePorts(
-  count: number,
-): Promise<{ ports: readonly number[]; releaseProbes(): Promise<void>; release(): Promise<void> }> {
-  if (!Number.isInteger(count) || count < 1 || count > MAX_PORT_COUNT) {
-    throw new RangeError(`Port count must be an integer from 1 to ${MAX_PORT_COUNT}; received ${count}`);
+const reserveAttempt = Effect.fn("reserveAttempt")(function* (
+  directory: string, candidates: number[], count: number, runId: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const held: Array<{ port: number; close: Effect.Effect<void, Error> }> = [];
+  const remove = (file: string) => fs.remove(file, { force: true });
+  for (const port of candidates) {
+    const server = yield* Effect.acquireRelease(
+      probePort(port), (server) => server ? closeServer(server).pipe(Effect.orDie) : Effect.void,
+    );
+    if (!server) continue;
+    const close = closeServer(server);
+    const recordPath = path.join(directory, `port-${port}.json`);
+    const temp = path.join(directory, `.reservation-${runId}-${port}`);
+    const record = JSON.stringify({ version: 1, pid: process.pid, runId, port });
+    const acquired = yield* Effect.uninterruptible(Effect.gen(function* () {
+      yield* fs.writeFileString(temp, record, { mode: 0o600, flag: "wx" });
+      const linked = yield* fs.link(temp, recordPath).pipe(
+        Effect.as(true),
+        Effect.catchReason("PlatformError", "AlreadyExists", () => Effect.succeed(false)),
+        Effect.ensuring(remove(temp).pipe(Effect.ignore)),
+      );
+      if (linked) {
+        yield* Effect.addFinalizer(() => Effect.gen(function* () {
+          const current = yield* readReservation(recordPath);
+          if (current?.runId === runId) yield* remove(recordPath);
+        }).pipe(Effect.orDie));
+      }
+      return linked;
+    }));
+    if (!acquired) {
+      // Keep the probe bound until reclamation finishes so competing Prex
+      // invocations cannot replace the same stale record concurrently.
+      const owner = yield* readReservation(recordPath);
+      if (owner && (yield* ownerExited(owner.pid))) yield* remove(recordPath);
+      yield* close;
+      continue;
+    }
+    held.push({ port, close });
+    if (held.length === count) return held;
   }
+  return undefined;
+});
 
-  const { directory, range } = await loadConfigAndStateDirectory();
+export const reservePorts = Effect.fn("reservePorts")(function* (count: number) {
+  if (!Number.isInteger(count) || count < 1 || count > 5) {
+    return yield* Effect.fail(new RangeError(`Port count must be an integer from 1 to 5; received ${count}`));
+  }
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const configPath = path.join(process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config"), "prex", "config.json");
+  const range = yield* fs.readFileString(configPath).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Settings))),
+    Effect.map(({ ports }) => ports),
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed({ min: 41000, max: 41999 })),
+    Effect.filterOrFail(({ min, max }) => min <= max, () => new Error("ports.min must be <= ports.max")),
+    Effect.mapError((error) => new Error(`Invalid Prex configuration at ${configPath}: ${error.message}`)),
+  );
   const capacity = range.max - range.min + 1;
   if (count > capacity) {
-    throw new Error(`Cannot reserve ${count} ports from range ${range.min}-${range.max}`);
+    return yield* Effect.fail(new Error(`Cannot reserve ${count} ports from range ${range.min}-${range.max}`));
   }
 
-  const runId = randomBytes(16).toString("hex");
-  const held: Array<{ port: number; server: Server; path: string }> = [];
+  const directory = path.join(process.env.XDG_STATE_HOME || path.join(homedir(), ".local", "state"), "prex", "ports");
+  yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
+  const scope = yield* Scope.Scope;
+  const runId = crypto.randomUUID().replaceAll("-", "");
   const maxAttempts = Math.min(8, Math.max(2, capacity));
-
-  try {
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const candidates = shuffledPorts(range);
-      for (const port of candidates) {
-        const server = await probePort(port);
-        if (!server) continue;
-
-        const path = reservationPath(directory, port);
-        try {
-          // link() publishes a fully-written record atomically and fails if another
-          // cooperating invocation already owns this port.
-          const tempPath = join(directory, `${TEMP_PREFIX}${runId}-${port}`);
-          const record: Reservation = { version: 1, pid: process.pid, runId, port };
-          await writeFile(tempPath, JSON.stringify(record), { mode: 0o600, flag: "wx" });
-          try {
-            await link(tempPath, path);
-          } finally {
-            await unlink(tempPath).catch(() => undefined);
-          }
-          held.push({ port, server, path });
-          if (held.length === count) return createLease(held, runId);
-        } catch (error) {
-          await closeServer(server);
-          if (isCode(error, "EEXIST")) {
-            await removeReservationIfOwnerExited(path);
-            continue;
-          }
-          throw error;
-        }
-      }
-
-      await releaseHeld(held, runId);
-      if (attempt + 1 < maxAttempts) await delay(randomInt(10, 60));
-    }
-  } catch (error) {
-    await releaseHeld(held, runId);
-    throw error;
+  for (let remaining = maxAttempts; remaining > 0; remaining--) {
+    const lease = yield* Scope.fork(scope);
+    const held = yield* reserveAttempt(directory, shuffledPorts(range), count, runId).pipe(Scope.provide(lease));
+    if (held) return {
+      ports: held.map(({ port }) => port),
+      releaseProbes: Effect.forEach(held, ({ close }) => close, { discard: true, concurrency: "unbounded" }),
+    };
+    yield* Scope.close(lease, Exit.void);
+    if (remaining > 1) yield* Effect.sleep(randomInt(10, 60));
   }
+  return yield* Effect.fail(new Error(`Unable to reserve ${count} ports in range ${range.min}-${range.max}`));
+});
 
-  await releaseHeld(held, runId);
-  throw new Error(`Unable to reserve ${count} ports in range ${range.min}-${range.max}`);
-}
-
-function createLease(
-  held: Array<{ port: number; server: Server; path: string }>,
-  runId: string,
-) {
-  let releaseProbesPromise: Promise<void> | undefined;
-  let releasePromise: Promise<void> | undefined;
-
-  const releaseProbes = (): Promise<void> => {
-    if (releaseProbesPromise) return releaseProbesPromise;
-    releaseProbesPromise = Promise.all(held.map(({ server }) => closeServer(server))).then(() => undefined);
-    return releaseProbesPromise;
-  };
-
-  const release = (): Promise<void> => {
-    if (releasePromise) return releasePromise;
-    releasePromise = (async () => {
-      let closeError: unknown;
-      try {
-        await releaseProbes();
-      } catch (error) {
-        closeError = error;
-      }
-      const errors = await Promise.all(held.map(async ({ path }) => {
-        try {
-          const record = parseReservation(await readFile(path, "utf8"));
-          if (record?.runId === runId) await unlink(path);
-          return undefined;
-        } catch (error) {
-          if (isCode(error, "ENOENT")) return undefined;
-          return error;
-        }
-      }));
-      const error = errors.find(Boolean) ?? closeError;
-      if (error) throw error;
-    })();
-    return releasePromise;
-  };
-
-  return { ports: held.map(({ port }) => port), releaseProbes, release };
-}
-
-async function releaseHeld(
-  held: Array<{ port: number; server: Server; path: string }>,
-  runId: string,
-): Promise<void> {
-  await Promise.all(held.map(async ({ server, path }) => {
-    await closeServer(server).catch(() => undefined);
-    try {
-      const record = parseReservation(await readFile(path, "utf8"));
-      if (record?.runId === runId) await unlink(path);
-    } catch (error) {
-      if (!isCode(error, "ENOENT")) throw error;
-    }
-  }));
-  held.length = 0;
-}
-
-async function probePort(port: number): Promise<Server | undefined> {
-  const server = createServer();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const onError = (error: NodeJS.ErrnoException) => {
-        server.off("listening", onListening);
-        reject(error);
-      };
-      const onListening = () => {
-        server.off("error", onError);
-        resolve();
-      };
-      server.once("error", onError);
-      server.once("listening", onListening);
-      server.listen({ host: "127.0.0.1", port, exclusive: true });
+function probePort(port: number) {
+  return Effect.callback<Server | undefined, Error>((resume) => {
+    const server = createServer((socket) => socket.destroy());
+    const onError = (error: NodeJS.ErrnoException) =>
+      resume(error.code === "EADDRINUSE" ? Effect.succeed(undefined) : Effect.fail(error));
+    server.once("error", onError);
+    server.listen({ host: "127.0.0.1", port, exclusive: true }, () => {
+      server.off("error", onError);
+      resume(Effect.succeed(server));
     });
-    return server;
-  } catch (error) {
-    await closeServer(server).catch(() => undefined);
-    if (isCode(error, "EADDRINUSE")) return undefined;
-    throw error;
-  }
-}
-
-function closeServer(server: Server): Promise<void> {
-  if (!server.listening) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
   });
 }
 
-async function loadConfigAndStateDirectory(): Promise<{ directory: string; range: PortRange }> {
-  const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
-  const configPath = join(configHome, "prex", "config.json");
-  let range: PortRange = { min: DEFAULT_MIN, max: DEFAULT_MAX };
-  try {
-    const parsed: unknown = JSON.parse(await readFile(configPath, "utf8"));
-    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.ports)) {
-      throw new Error("expected { version: 1, ports: { min, max } }");
-    }
-    const { min, max } = parsed.ports;
-    if (!validPort(min) || !validPort(max) || min > max) {
-      throw new Error("ports.min and ports.max must be integers from 1024 to 65535, with min <= max");
-    }
-    range = { min, max };
-  } catch (error) {
-    if (!isCode(error, "ENOENT")) {
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`Invalid Prex configuration at ${configPath}: ${detail}`, { cause: error });
-    }
-  }
-
-  const stateHome = process.env.XDG_STATE_HOME || join(homedir(), ".local", "state");
-  const directory = join(stateHome, "prex", "ports");
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  return { directory, range };
+function closeServer(server: Server) {
+  return task(() => new Promise<void>((resolve, reject) => {
+    if (!server.listening) return resolve();
+    server.close((error) => error ? reject(error) : resolve());
+  }));
 }
 
-function shuffledPorts({ min, max }: PortRange): number[] {
+const readReservation = Effect.fn("readReservation")(function* (path: string) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.readFileString(path).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Reservation))),
+    Effect.catchTag("SchemaError", () => Effect.succeed(undefined)),
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
+  );
+});
+
+function ownerExited(pid: number) {
+  return attempt(() => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ESRCH") return true;
+      if (code === "EPERM") return false;
+      throw error;
+    }
+  });
+}
+
+function shuffledPorts({ min, max }: { min: number; max: number }): number[] {
   const ports = Array.from({ length: max - min + 1 }, (_, index) => min + index);
-  for (let index = ports.length - 1; index > 0; index -= 1) {
+  for (let index = ports.length - 1; index > 0; index--) {
     const swapIndex = randomInt(index + 1);
     [ports[index], ports[swapIndex]] = [ports[swapIndex], ports[index]];
   }
   return ports;
-}
-
-function reservationPath(directory: string, port: number): string {
-  return join(directory, `${RESERVATION_PREFIX}${port}.json`);
-}
-
-function parseReservation(value: string): Reservation | undefined {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!isRecord(parsed) || parsed.version !== 1 || !Number.isSafeInteger(parsed.pid) ||
-        typeof parsed.pid !== "number" || parsed.pid < 1 ||
-        typeof parsed.runId !== "string" || !Number.isInteger(parsed.port)) return undefined;
-    return parsed as unknown as Reservation;
-  } catch {
-    return undefined;
-  }
-}
-
-async function removeReservationIfOwnerExited(path: string): Promise<void> {
-  let record: Reservation | undefined;
-  try {
-    record = parseReservation(await readFile(path, "utf8"));
-  } catch (error) {
-    if (isCode(error, "ENOENT")) return;
-    throw error;
-  }
-  // A malformed record is kept conservatively. A live PID is also kept: PID
-  // reuse may delay reclamation, but cannot make us erase another live run.
-  if (!record) return;
-  try {
-    process.kill(record.pid, 0);
-  } catch (error) {
-    if (isCode(error, "ESRCH")) {
-      await unlink(path).catch((unlinkError) => {
-        if (!isCode(unlinkError, "ENOENT")) throw unlinkError;
-      });
-    } else if (!isCode(error, "EPERM")) {
-      throw error;
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function validPort(value: unknown): value is number {
-  return Number.isInteger(value) && typeof value === "number" && value >= 1024 && value <= 65535;
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return isRecord(error) && error.code === code;
 }

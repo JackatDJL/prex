@@ -10,7 +10,11 @@
     "declaration": true,
     "sourceMap": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": [
+      "bun"
+    ]
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

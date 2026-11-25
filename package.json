@@ -1,10 +1,10 @@
 {
   "name": "@jkxrx/prex",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Previews Extended: reserve local ports and run development servers",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "bun": ">=1.4.4"
   },
   "bin": {
     "prex": "./dist/cli.js"
@@ -12,6 +12,7 @@
   "files": [
     "dist/cli.js",
     "dist/upgrade.js",
+    "dist/failure.js",
     "dist/integrations.js",
     "dist/ports.js",
     "dist/project-config.js",
@@ -25,20 +26,23 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/cli.test.js",
-    "prepack": "npm run build",
+    "test": "bun run typecheck && bun test src",
+    "prepack": "bun run build",
     "changeset": "changeset",
-    "version:packages": "changeset version && npm install --package-lock-only",
+    "version:packages": "changeset version && bun install --lockfile-only",
     "release": "changeset publish",
-    "package:linux": "bash packaging/build-linux.sh"
+    "package:linux": "bash packaging/build-linux.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@effect/platform-bun": "^4.1.5",
     "effect": "^4.1.5",
     "qrcode": "^1.5.4",
     "smol-toml": "^1.9.1"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
+    "@types/bun": "^1.4.5",
     "@types/node": "^22.15.0",
     "@types/qrcode": "^1.5.6",
     "typescript": "^5.8.3"
@@ -51,5 +55,6 @@
     "type": "git",
     "url": "git+https://github.com/JackatDJL/prex.git"
   },
-  "license": "AGPL-3.0-or-later"
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "bun@1.4.4"
 }

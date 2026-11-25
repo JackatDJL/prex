@@ -62,7 +62,7 @@ export function Home({ english = false }: { english?: boolean }) {
         <pre className="terminal"><code>{'$ prex start --name web -- npm run dev\nweb (a84d2c1e0b367941)\nhttp://127.0.0.1:41408\n\n$ prex list\n$ prex stop web'}</code></pre>
       </section>
       <section className="section-wrap feature-grid">
-        <article><h2>{t('App und Vite', 'App and Vite')}</h2><p>{t('Gib zusammengehörigen Diensten benannte Ports und starte sie in einer Session.', 'Give related services named ports and launch them in one session.')}</p><Link href={docs + '/portfolio'}>{t('Laravel-Beispiel', 'Laravel example')}</Link></article>
+        <article><h2>{t('App und Vite', 'App and Vite')}</h2><p>{t('Gib zusammengehörigen Diensten benannte Ports und starte sie in einer Session.', 'Give related services named ports and launch them in one session.')}</p><Link href={docs + '/configuration'}>{t('Portrollen konfigurieren', 'Configure port roles')}</Link></article>
         <article><h2>{t('Auf dem Handy öffnen', 'Open it on your phone')}</h2><p>{t('Leite den Preview im eigenen Tailnet weiter und öffne die URL per QR-Code.', 'Forward the preview inside your tailnet and open its URL with a QR code.')}</p><Link href={docs + '/sessions'}>Tailscale</Link></article>
       </section>
     </main>

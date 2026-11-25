@@ -16,6 +16,15 @@ Prex liest `$XDG_CONFIG_HOME/prex/config.json` und verwendet bei fehlendem `XDG_
 
 ## Projekt-Scripts
 
+<figure className="prex-flow">
+  <figcaption>So kommen Portrollen beim Prozess an</figcaption>
+  <ol role="list">
+    <li>Das Projekt-Script deklariert Portrollen.</li>
+    <li>Prex reserviert einen Port pro Rolle.</li>
+    <li>Der Startbefehl bekommt Ports als Argumente oder Umgebungsvariablen.</li>
+  </ol>
+</figure>
+
 Lege `config/prex.toml` im Projektroot an. Prex nimmt die nächstgelegene Konfiguration oberhalb des aktuellen Arbeitsverzeichnisses und führt das benannte Script im zugehörigen Projektroot aus.
 
 ```toml
@@ -38,7 +47,7 @@ Starte die Scripts mit `prex signalling`, `prex web` oder `prex check`. Zusätzl
 
 `ports` enthält bis zu fünf eindeutige Rollen. Prex setzt `{{port.rolle}}` im Befehlsarray und in den String-Werten von `env` ein. `{{host}}` steht für `127.0.0.1`. Jede Rolle wird auch als Variable wie `PREX_PORT_SIGNALLING` übergeben. Ein Script ohne Rollen reserviert keine Ports. Das Signalling-Script muss die URL auswerten, damit es am zugewiesenen Port lauscht.
 
-Einzelne `prex`-Aufrufe haben eigene Reservierungen und Prozessumgebungen. Wenn auch der Webprozess die Signalling-URL braucht, definiere beide Rollen in **einem** Script und übergib beide Werte an einen gemeinsamen Startbefehl. Für eine Anwendung mit gemeinsam genutzten Laufzeitdateien siehe das [Portfolio-Profil](/docs/portfolio/).
+Einzelne `prex`-Aufrufe haben eigene Reservierungen und Prozessumgebungen. Wenn auch der Webprozess die Signalling-URL braucht, definiere beide Rollen in **einem** Script und übergib beide Werte an einen gemeinsamen Startbefehl.
 
 ## Ein Rezept aus einem festen Port migrieren
 

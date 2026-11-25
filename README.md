@@ -5,7 +5,7 @@
 Prex (Previews Extended) reserves local TCP ports and starts a development command with those ports in its environment.
 
 ```sh
-npm install -g @jkxrx/prex
+bun add -g @jkxrx/prex
 prex bun run dev
 prex run --ports 2 -- ./dev-stack
 ```
@@ -13,15 +13,16 @@ prex run --ports 2 -- ./dev-stack
 To work on the source checkout, install its dependencies and build the CLI:
 
 ```sh
-npm ci
-npm run build
+bun install --frozen-lockfile
+bun run build
+bun run test
 ```
 
 The short form passes the program and its arguments through as-is. Use `prex run -- <program> [arguments…]` when the command name conflicts with a Prex option or reserved subcommand. `--ports` accepts 1 to 5; integrations can choose the default when it is omitted. `--profile` selects an integration profile.
 
 Prex runs in the current directory, inherits the environment and standard streams, and returns the child's exit status. The selected ports are printed to stderr. A command or project must use the provided port environment variables for its server to listen on them.
 
-Requires Node.js 22 or newer.
+The npm package requires Bun 1.4.4 or newer. The compiled binaries include Bun.
 
 ## Project scripts and documentation
 

@@ -8,10 +8,10 @@ description: Native Binary, npm-Paket und die Kanäle Stable und Nightly.
 | Installation | Voraussetzungen | Updates |
 | --- | --- | --- |
 | Shell-Installer | Linux oder macOS, Bash, curl und ein SHA-256-Werkzeug | `prex upgrade` |
-| npm | Node.js ab 22 und npm | `npm install -g @jkxrx/prex@latest` |
-| Projektspezifisch | Node.js und Paketmanager des Projekts | Version im Projekt und im Lockfile ändern |
+| npm | Bun ab 1.4.4 und npm | `npm install -g @jkxrx/prex@latest` |
+| Projektspezifisch | Bun und Paketmanager des Projekts | Version im Projekt und im Lockfile ändern |
 
-Der Shell-Installer braucht einen veröffentlichten Binary-Build. Wenn im Download-Repository noch kein Release für deinen Kanal existiert, verwende das npm-Paket. Das npm-Paket bringt JavaScript mit und braucht einen vorhandenen Node-Prozess. Die native Binary enthält die von Bun benötigte Laufzeit. Für einen gestarteten Befehl wie `php artisan serve` oder `npm run dev` brauchst du weiterhin die Werkzeuge dieses Projekts.
+Der Shell-Installer braucht einen veröffentlichten Binary-Build. Wenn im Download-Repository noch kein Release für deinen Kanal existiert, verwende das npm-Paket. Das npm-Paket bringt JavaScript mit und braucht Bun ab 1.4.4. Die native Binary enthält die von Bun benötigte Laufzeit. Für einen gestarteten Befehl wie `php artisan serve` oder `npm run dev` brauchst du weiterhin die Werkzeuge dieses Projekts.
 
 ## Mit dem Shell-Installer starten
 
